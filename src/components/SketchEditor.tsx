@@ -1892,6 +1892,80 @@ const hexToRgba = (hex: string, alpha: number): string => {
   return `rgba(${r},${g},${b},${alpha})`;
 };
 
+const createShapeFillStyle = (
+  ctx: CanvasRenderingContext2D,
+  stroke: Stroke,
+  x: number, y: number, w: number, h: number,
+): string | CanvasGradient | CanvasPattern | null => {
+  const ft = stroke.fillType || 'solid';
+  const c1 = stroke.fillColor || '#3b82f6';
+  const c2 = stroke.fillColor2 || '#8b5cf6';
+  const opacity = stroke.fillOpacity ?? 0.3;
+  const angle = stroke.fillAngle ?? 0;
+
+  switch (ft) {
+    case 'solid':
+      return hexToRgba(c1, opacity);
+    case 'linear-gradient': {
+      const rad = (angle * Math.PI) / 180;
+      const cx = x + w / 2, cy = y + h / 2;
+      const len = Math.max(w, h) / 2;
+      const grad = ctx.createLinearGradient(
+        cx - Math.cos(rad) * len, cy - Math.sin(rad) * len,
+        cx + Math.cos(rad) * len, cy + Math.sin(rad) * len,
+      );
+      grad.addColorStop(0, hexToRgba(c1, opacity));
+      grad.addColorStop(1, hexToRgba(c2, opacity));
+      return grad;
+    }
+    case 'radial-gradient': {
+      const cx = x + w / 2, cy = y + h / 2;
+      const r = Math.max(w, h) / 2;
+      const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+      grad.addColorStop(0, hexToRgba(c1, opacity));
+      grad.addColorStop(1, hexToRgba(c2, opacity));
+      return grad;
+    }
+    case 'stripes': {
+      const patCanvas = document.createElement('canvas');
+      const s = 12;
+      patCanvas.width = s; patCanvas.height = s;
+      const pCtx = patCanvas.getContext('2d')!;
+      pCtx.fillStyle = hexToRgba(c1, opacity * 0.3);
+      pCtx.fillRect(0, 0, s, s);
+      pCtx.strokeStyle = hexToRgba(c1, opacity);
+      pCtx.lineWidth = 3;
+      pCtx.beginPath(); pCtx.moveTo(0, s); pCtx.lineTo(s, 0); pCtx.stroke();
+      return ctx.createPattern(patCanvas, 'repeat');
+    }
+    case 'dots': {
+      const patCanvas = document.createElement('canvas');
+      const s = 12;
+      patCanvas.width = s; patCanvas.height = s;
+      const pCtx = patCanvas.getContext('2d')!;
+      pCtx.fillStyle = hexToRgba(c1, opacity * 0.2);
+      pCtx.fillRect(0, 0, s, s);
+      pCtx.fillStyle = hexToRgba(c1, opacity);
+      pCtx.beginPath(); pCtx.arc(s / 2, s / 2, 2, 0, Math.PI * 2); pCtx.fill();
+      return ctx.createPattern(patCanvas, 'repeat');
+    }
+    case 'crosshatch': {
+      const patCanvas = document.createElement('canvas');
+      const s = 10;
+      patCanvas.width = s; patCanvas.height = s;
+      const pCtx = patCanvas.getContext('2d')!;
+      pCtx.fillStyle = hexToRgba(c1, opacity * 0.15);
+      pCtx.fillRect(0, 0, s, s);
+      pCtx.strokeStyle = hexToRgba(c1, opacity * 0.8);
+      pCtx.lineWidth = 1;
+      pCtx.beginPath(); pCtx.moveTo(0, s); pCtx.lineTo(s, 0); pCtx.stroke();
+      pCtx.beginPath(); pCtx.moveTo(0, 0); pCtx.lineTo(s, s); pCtx.stroke();
+      return ctx.createPattern(patCanvas, 'repeat');
+    }
+  }
+  return null;
+};
+
 const hslToHex = (h: number, s: number, l: number): string => {
   const a = s * Math.min(l, 1 - l);
   const f = (n: number) => {
@@ -2303,12 +2377,15 @@ const drawStroke = (ctx: CanvasRenderingContext2D, stroke: Stroke, asClipPath?: 
     if (stroke.points.length < 2) { ctx.restore(); return; }
     ctx.strokeStyle = stroke.color; ctx.lineWidth = stroke.width;
     const hasFill = stroke.fillColor && stroke.fillOpacity && stroke.fillOpacity > 0;
+    const shapeBx = Math.min(start.x, end.x), shapeBy = Math.min(start.y, end.y);
+    const shapeBw = Math.abs(end.x - start.x), shapeBh = Math.abs(end.y - start.y);
+    const getShapeFill = () => hasFill ? createShapeFillStyle(ctx, stroke, shapeBx, shapeBy, shapeBw, shapeBh) : null;
+    const applyFill = () => { const fs = getShapeFill(); if (fs) { ctx.fillStyle = fs; ctx.fill(); } };
     switch (stroke.tool) {
       case 'line': ctx.beginPath(); ctx.moveTo(start.x, start.y); ctx.lineTo(end.x, end.y); ctx.stroke(); break;
       case 'rect':
         if (hasFill) {
-          ctx.fillStyle = hexToRgba(stroke.fillColor!, stroke.fillOpacity!);
-          ctx.fillRect(start.x, start.y, end.x - start.x, end.y - start.y);
+          const fs = getShapeFill(); if (fs) { ctx.fillStyle = fs; ctx.fillRect(start.x, start.y, end.x - start.x, end.y - start.y); }
         }
         ctx.strokeRect(start.x, start.y, end.x - start.x, end.y - start.y);
         break;
@@ -2316,10 +2393,7 @@ const drawStroke = (ctx: CanvasRenderingContext2D, stroke: Stroke, asClipPath?: 
         const rx = Math.abs(end.x - start.x) / 2; const ry = Math.abs(end.y - start.y) / 2;
         const cx = start.x + (end.x - start.x) / 2; const cy = start.y + (end.y - start.y) / 2;
         ctx.beginPath(); ctx.ellipse(cx, cy, Math.max(1, rx), Math.max(1, ry), 0, 0, Math.PI * 2);
-        if (hasFill) {
-          ctx.fillStyle = hexToRgba(stroke.fillColor!, stroke.fillOpacity!);
-          ctx.fill();
-        }
+        applyFill();
         ctx.stroke();
         break;
       }
@@ -2329,13 +2403,13 @@ const drawStroke = (ctx: CanvasRenderingContext2D, stroke: Stroke, asClipPath?: 
       case 'triangle': {
         const mx = (start.x + end.x) / 2;
         ctx.beginPath(); ctx.moveTo(mx, start.y); ctx.lineTo(end.x, end.y); ctx.lineTo(start.x, end.y); ctx.closePath();
-        if (hasFill) { ctx.fillStyle = hexToRgba(stroke.fillColor!, stroke.fillOpacity!); ctx.fill(); }
+        applyFill();
         ctx.stroke(); break;
       }
       case 'diamond': {
         const cx = (start.x + end.x) / 2, cy = (start.y + end.y) / 2;
         ctx.beginPath(); ctx.moveTo(cx, start.y); ctx.lineTo(end.x, cy); ctx.lineTo(cx, end.y); ctx.lineTo(start.x, cy); ctx.closePath();
-        if (hasFill) { ctx.fillStyle = hexToRgba(stroke.fillColor!, stroke.fillOpacity!); ctx.fill(); }
+        applyFill();
         ctx.stroke(); break;
       }
       case 'star': {
@@ -2350,7 +2424,7 @@ const drawStroke = (ctx: CanvasRenderingContext2D, stroke: Stroke, asClipPath?: 
           i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
         }
         ctx.closePath();
-        if (hasFill) { ctx.fillStyle = hexToRgba(stroke.fillColor!, stroke.fillOpacity!); ctx.fill(); }
+        applyFill();
         ctx.stroke(); break;
       }
       case 'polygon': {
@@ -2364,7 +2438,7 @@ const drawStroke = (ctx: CanvasRenderingContext2D, stroke: Stroke, asClipPath?: 
           i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
         }
         ctx.closePath();
-        if (hasFill) { ctx.fillStyle = hexToRgba(stroke.fillColor!, stroke.fillOpacity!); ctx.fill(); }
+        applyFill();
         ctx.stroke(); break;
       }
       case 'pentagon': {
@@ -2377,7 +2451,7 @@ const drawStroke = (ctx: CanvasRenderingContext2D, stroke: Stroke, asClipPath?: 
           i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
         }
         ctx.closePath();
-        if (hasFill) { ctx.fillStyle = hexToRgba(stroke.fillColor!, stroke.fillOpacity!); ctx.fill(); }
+        applyFill();
         ctx.stroke(); break;
       }
       case 'heart': {
@@ -2390,7 +2464,7 @@ const drawStroke = (ctx: CanvasRenderingContext2D, stroke: Stroke, asClipPath?: 
         ctx.bezierCurveTo(cx + w * 0.4, cy - h, cx + w, cy - h * 0.8, cx + w, cy - h * 0.2);
         ctx.bezierCurveTo(cx + w, cy + h * 0.2, cx + w * 0.1, cy + h * 0.6, cx, cy + h * 0.9);
         ctx.closePath();
-        if (hasFill) { ctx.fillStyle = hexToRgba(stroke.fillColor!, stroke.fillOpacity!); ctx.fill(); }
+        applyFill();
         ctx.stroke(); break;
       }
       case 'moon': {
@@ -2398,7 +2472,7 @@ const drawStroke = (ctx: CanvasRenderingContext2D, stroke: Stroke, asClipPath?: 
         const r = Math.max(Math.abs(end.x - start.x), Math.abs(end.y - start.y)) / 2;
         ctx.beginPath();
         ctx.arc(cx, cy, r, 0, Math.PI * 2);
-        if (hasFill) { ctx.fillStyle = hexToRgba(stroke.fillColor!, stroke.fillOpacity!); ctx.fill(); }
+        applyFill();
         ctx.stroke();
         // Inner cutout
         ctx.save();
@@ -2423,7 +2497,7 @@ const drawStroke = (ctx: CanvasRenderingContext2D, stroke: Stroke, asClipPath?: 
         ctx.bezierCurveTo(cx + w * 0.3, cy - h, cx + w * 0.8, cy - h * 0.8, cx + w * 0.7, cy - h * 0.3);
         ctx.bezierCurveTo(cx + w, cy - h * 0.2, cx + w, cy + h * 0.3, cx + w * 0.6, cy + h * 0.3);
         ctx.closePath();
-        if (hasFill) { ctx.fillStyle = hexToRgba(stroke.fillColor!, stroke.fillOpacity!); ctx.fill(); }
+        applyFill();
         ctx.stroke(); break;
       }
       case 'speechBubble': {
@@ -2445,7 +2519,7 @@ const drawStroke = (ctx: CanvasRenderingContext2D, stroke: Stroke, asClipPath?: 
         ctx.lineTo(x, y + r2);
         ctx.arcTo(x, y, x + r2, y, r2);
         ctx.closePath();
-        if (hasFill) { ctx.fillStyle = hexToRgba(stroke.fillColor!, stroke.fillOpacity!); ctx.fill(); }
+        applyFill();
         ctx.stroke(); break;
       }
       case 'cylinder': {
@@ -2454,10 +2528,13 @@ const drawStroke = (ctx: CanvasRenderingContext2D, stroke: Stroke, asClipPath?: 
         const ellipseH = h * 0.15;
         const cx = x + w / 2;
         if (hasFill) {
-          ctx.fillStyle = hexToRgba(stroke.fillColor!, stroke.fillOpacity!);
-          ctx.beginPath(); ctx.ellipse(cx, y + ellipseH, w / 2, ellipseH, 0, 0, Math.PI * 2); ctx.fill();
-          ctx.fillRect(x, y + ellipseH, w, h - ellipseH * 2);
-          ctx.beginPath(); ctx.ellipse(cx, y + h - ellipseH, w / 2, ellipseH, 0, 0, Math.PI * 2); ctx.fill();
+          const fs = getShapeFill();
+          if (fs) {
+            ctx.fillStyle = fs;
+            ctx.beginPath(); ctx.ellipse(cx, y + ellipseH, w / 2, ellipseH, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.fillRect(x, y + ellipseH, w, h - ellipseH * 2);
+            ctx.beginPath(); ctx.ellipse(cx, y + h - ellipseH, w / 2, ellipseH, 0, 0, Math.PI * 2); ctx.fill();
+          }
         }
         // Side lines
         ctx.beginPath(); ctx.moveTo(x, y + ellipseH); ctx.lineTo(x, y + h - ellipseH); ctx.stroke();
@@ -2476,7 +2553,7 @@ const drawStroke = (ctx: CanvasRenderingContext2D, stroke: Stroke, asClipPath?: 
         ctx.moveTo(x + inset, y); ctx.lineTo(x + w - inset, y);
         ctx.lineTo(x + w, y + h); ctx.lineTo(x, y + h);
         ctx.closePath();
-        if (hasFill) { ctx.fillStyle = hexToRgba(stroke.fillColor!, stroke.fillOpacity!); ctx.fill(); }
+        applyFill();
         ctx.stroke(); break;
       }
       case 'cone': {
@@ -2491,7 +2568,7 @@ const drawStroke = (ctx: CanvasRenderingContext2D, stroke: Stroke, asClipPath?: 
         ctx.moveTo(cx, y); ctx.lineTo(cx - w, y + h - ellipseH);
         ctx.stroke();
         ctx.beginPath(); ctx.ellipse(cx, y + h - ellipseH, w, ellipseH, 0, 0, Math.PI * 2);
-        if (hasFill) { ctx.fillStyle = hexToRgba(stroke.fillColor!, stroke.fillOpacity!); ctx.fill(); }
+        applyFill();
         ctx.stroke(); break;
       }
     }
@@ -3715,6 +3792,9 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
   const [fillEnabled, setFillEnabled] = useState(false);
   const [fillColor, setFillColor] = useState('#3b82f6');
   const [fillOpacity, setFillOpacity] = useState(0.3);
+  const [fillType, setFillType] = useState<'solid' | 'linear-gradient' | 'radial-gradient' | 'stripes' | 'dots' | 'crosshatch'>('solid');
+  const [fillColor2, setFillColor2] = useState('#8b5cf6');
+  const [fillAngle, setFillAngle] = useState(135);
   const [pressureOpacityEnabled, setPressureOpacityEnabled] = useState(false);
 
   // Color palette manager state
@@ -5443,7 +5523,7 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
       color: strokeColor,
       width: strokeWidth,
       tool,
-      ...(isShapeTool(tool) && fillEnabled ? { fillColor, fillOpacity } : {}),
+      ...(isShapeTool(tool) && fillEnabled ? { fillColor, fillOpacity, fillType, fillColor2, fillAngle } : {}),
       ...(tool === 'textHighlight' ? { fillOpacity: highlightOpacity } : {}),
       ...(pressureOpacityEnabled && !isShapeTool(tool) && tool !== 'eraser' ? { pressureOpacity: true } : {}),
       ...(tool === 'washi' ? { washiPatternId } : {}),
@@ -5464,7 +5544,7 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
     } else {
       scribbleDetectorRef.current = null;
     }
-  }, [color, strokeWidth, tool, activeLayerId, redrawAll, eyedropperActive, applyColor, toolOpacity, selectedIndices, selectionRotation, clearSelection, fillEnabled, fillColor, fillOpacity, snapEnabled, background, pressureOpacityEnabled, highlightOpacity, presentationMode, isAudioSyncPlaying, washiPatternId]);
+  }, [color, strokeWidth, tool, activeLayerId, redrawAll, eyedropperActive, applyColor, toolOpacity, selectedIndices, selectionRotation, clearSelection, fillEnabled, fillColor, fillOpacity, fillType, fillColor2, fillAngle, snapEnabled, background, pressureOpacityEnabled, highlightOpacity, presentationMode, isAudioSyncPlaying, washiPatternId]);
 
   const onPointerMove = useCallback((e: PointerEvent) => {
     // Infinite canvas: panning in progress
@@ -7745,6 +7825,21 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
               const selectedShapeStrokes = selectedShapeIndices.map(idx => layer.strokes[idx]);
               const currentFill = selectedShapeStrokes[0]?.fillColor;
               const currentFillOpacity = selectedShapeStrokes[0]?.fillOpacity ?? 0.3;
+              const currentFillType = selectedShapeStrokes[0]?.fillType || 'solid';
+              const currentFillColor2 = selectedShapeStrokes[0]?.fillColor2 || '#8b5cf6';
+              const currentFillAngle = selectedShapeStrokes[0]?.fillAngle ?? 135;
+
+              const applyToSelected = (updater: (s: Stroke) => void) => {
+                undoStackRef.current = [...undoStackRef.current.slice(-(MAX_UNDO - 1)), cloneLayers(layersRef.current)];
+                redoStackRef.current = [];
+                for (const idx of selectedShapeIndices) {
+                  const s = layer.strokes[idx];
+                  if (s) updater(s);
+                }
+                redrawAll();
+                emitChange();
+                forceUpdate(n => n + 1);
+              };
 
               return (
                 <Popover>
@@ -7761,23 +7856,13 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
                       )}
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent className="w-auto p-3 bg-card" align="start" side="bottom">
+                  <PopoverContent className="w-auto p-3 bg-card max-w-[220px]" align="start" side="bottom">
                     <p className="text-[10px] font-medium text-foreground mb-2">{t('sketch.fillColor')}</p>
                     <div className="flex gap-1.5 flex-wrap mb-2">
                       <button
                         className={cn('w-6 h-6 rounded-full border-2 transition-transform active:scale-90 flex items-center justify-center',
                           !currentFill ? 'border-primary scale-110' : 'border-border')}
-                        onClick={() => {
-                          undoStackRef.current = [...undoStackRef.current.slice(-(MAX_UNDO - 1)), cloneLayers(layersRef.current)];
-                          redoStackRef.current = [];
-                          for (const idx of selectedShapeIndices) {
-                            const s = layer.strokes[idx];
-                            if (s) { delete s.fillColor; delete s.fillOpacity; }
-                          }
-                          redrawAll();
-                          emitChange();
-                          forceUpdate(n => n + 1);
-                        }}
+                        onClick={() => applyToSelected(s => { delete s.fillColor; delete s.fillOpacity; delete s.fillType; delete s.fillColor2; delete s.fillAngle; })}
                         title={t('sketch.noFill')}
                       >
                         <X className="h-3 w-3 text-muted-foreground" />
@@ -7787,37 +7872,74 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
                           className={cn('w-6 h-6 rounded-full border-2 transition-transform active:scale-90',
                             currentFill === c ? 'border-primary scale-110' : 'border-border')}
                           style={{ backgroundColor: c }}
-                          onClick={() => {
-                            undoStackRef.current = [...undoStackRef.current.slice(-(MAX_UNDO - 1)), cloneLayers(layersRef.current)];
-                            redoStackRef.current = [];
-                            for (const idx of selectedShapeIndices) {
-                              const s = layer.strokes[idx];
-                              if (s) {
-                                s.fillColor = c;
-                                s.fillOpacity = s.fillOpacity ?? 0.3;
-                              }
-                            }
-                            redrawAll();
-                            emitChange();
-                            forceUpdate(n => n + 1);
-                          }}
+                          onClick={() => applyToSelected(s => { s.fillColor = c; s.fillOpacity = s.fillOpacity ?? 0.3; })}
                         />
                       ))}
                     </div>
                     {currentFill && (
-                      <div>
-                        <p className="text-[10px] text-muted-foreground mb-1">{t('sketch.fillOpacity')}: {Math.round(currentFillOpacity * 100)}%</p>
-                        <Slider min={5} max={100} step={5} value={[Math.round(currentFillOpacity * 100)]} onValueChange={([v]) => {
-                          undoStackRef.current = [...undoStackRef.current.slice(-(MAX_UNDO - 1)), cloneLayers(layersRef.current)];
-                          redoStackRef.current = [];
-                          for (const idx of selectedShapeIndices) {
-                            const s = layer.strokes[idx];
-                            if (s) s.fillOpacity = v / 100;
-                          }
-                          redrawAll();
-                          emitChange();
-                          forceUpdate(n => n + 1);
-                        }} />
+                      <div className="space-y-2">
+                        {/* Fill type selector */}
+                        <div>
+                          <p className="text-[10px] text-muted-foreground mb-1">Fill Type</p>
+                          <div className="flex gap-1 flex-wrap">
+                            {([
+                              { id: 'solid', label: '■' },
+                              { id: 'linear-gradient', label: '◧' },
+                              { id: 'radial-gradient', label: '◉' },
+                              { id: 'stripes', label: '▤' },
+                              { id: 'dots', label: '⠿' },
+                              { id: 'crosshatch', label: '▩' },
+                            ] as { id: Stroke['fillType']; label: string }[]).map(ft => (
+                              <button key={ft.id}
+                                className={cn('w-7 h-7 rounded text-xs font-bold border-2 transition-all active:scale-90',
+                                  currentFillType === ft.id ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:bg-muted')}
+                                onClick={() => applyToSelected(s => { s.fillType = ft.id; })}
+                                title={ft.id!.replace('-', ' ')}
+                              >
+                                {ft.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        {/* Secondary color for gradients */}
+                        {(currentFillType === 'linear-gradient' || currentFillType === 'radial-gradient') && (
+                          <div>
+                            <p className="text-[10px] text-muted-foreground mb-1">Second Color</p>
+                            <div className="flex gap-1 flex-wrap">
+                              {['#8b5cf6','#3b82f6','#ef4444','#22c55e','#f59e0b','#ec4899','#06b6d4','#f97316','#1a1a1a','#ffffff'].map(c => (
+                                <button key={c}
+                                  className={cn('w-5 h-5 rounded-full border-2 transition-transform active:scale-90',
+                                    currentFillColor2 === c ? 'border-primary scale-110' : 'border-border')}
+                                  style={{ backgroundColor: c }}
+                                  onClick={() => applyToSelected(s => { s.fillColor2 = c; })}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {/* Gradient angle for linear */}
+                        {currentFillType === 'linear-gradient' && (
+                          <div>
+                            <p className="text-[10px] text-muted-foreground mb-1">Direction: {currentFillAngle}°</p>
+                            <div className="flex gap-1 flex-wrap">
+                              {[0, 45, 90, 135, 180, 225, 270, 315].map(a => (
+                                <button key={a}
+                                  className={cn('w-6 h-6 rounded border-2 text-[9px] font-medium transition-all active:scale-90',
+                                    currentFillAngle === a ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:bg-muted')}
+                                  onClick={() => applyToSelected(s => { s.fillAngle = a; })}
+                                >
+                                  {['→','↗','↑','↖','←','↙','↓','↘'][Math.round(a / 45) % 8]}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        <div>
+                          <p className="text-[10px] text-muted-foreground mb-1">{t('sketch.fillOpacity')}: {Math.round(currentFillOpacity * 100)}%</p>
+                          <Slider min={5} max={100} step={5} value={[Math.round(currentFillOpacity * 100)]} onValueChange={([v]) => {
+                            applyToSelected(s => { s.fillOpacity = v / 100; });
+                          }} />
+                        </div>
                       </div>
                     )}
                   </PopoverContent>
@@ -9195,6 +9317,62 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
                       />
                     ))}
                   </div>
+                  {/* Fill type selector */}
+                  <div>
+                    <p className="text-[10px] text-muted-foreground mb-1">Fill Type</p>
+                    <div className="flex gap-1 flex-wrap">
+                      {([
+                        { id: 'solid', label: '■' },
+                        { id: 'linear-gradient', label: '◧' },
+                        { id: 'radial-gradient', label: '◉' },
+                        { id: 'stripes', label: '▤' },
+                        { id: 'dots', label: '⠿' },
+                        { id: 'crosshatch', label: '▩' },
+                      ] as { id: typeof fillType; label: string }[]).map(ft => (
+                        <button key={ft.id}
+                          className={cn('w-7 h-7 rounded text-xs font-bold border-2 transition-all active:scale-90',
+                            fillType === ft.id ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:bg-muted')}
+                          onClick={() => setFillType(ft.id)}
+                          title={ft.id.replace('-', ' ')}
+                        >
+                          {ft.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {/* Secondary color for gradients */}
+                  {(fillType === 'linear-gradient' || fillType === 'radial-gradient') && (
+                    <div>
+                      <p className="text-[10px] text-muted-foreground mb-1">Second Color</p>
+                      <div className="flex gap-1 flex-wrap">
+                        {['#8b5cf6','#3b82f6','#ef4444','#22c55e','#f59e0b','#ec4899','#06b6d4','#f97316','#1a1a1a','#ffffff'].map(c => (
+                          <button key={c}
+                            className={cn('w-5 h-5 rounded-full border-2 transition-transform active:scale-90',
+                              fillColor2 === c ? 'border-primary scale-110' : 'border-border')}
+                            style={{ backgroundColor: c }}
+                            onClick={() => setFillColor2(c)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {/* Gradient angle for linear gradient */}
+                  {fillType === 'linear-gradient' && (
+                    <div>
+                      <p className="text-[10px] text-muted-foreground mb-1">Direction: {fillAngle}°</p>
+                      <div className="flex gap-1 flex-wrap">
+                        {[0, 45, 90, 135, 180, 225, 270, 315].map(a => (
+                          <button key={a}
+                            className={cn('w-6 h-6 rounded border-2 text-[9px] font-medium transition-all active:scale-90',
+                              fillAngle === a ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:bg-muted')}
+                            onClick={() => setFillAngle(a)}
+                          >
+                            {['→','↗','↑','↖','←','↙','↓','↘'][Math.round(a / 45) % 8]}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   <div>
                     <p className="text-[10px] text-muted-foreground mb-1">{t('sketch.fillOpacity')}: {Math.round(fillOpacity * 100)}%</p>
                     <Slider min={5} max={100} step={5} value={[Math.round(fillOpacity * 100)]} onValueChange={([v]) => setFillOpacity(v / 100)} />
