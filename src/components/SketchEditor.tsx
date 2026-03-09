@@ -6898,6 +6898,14 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
                 >
                   {t('sketch.resetToDefaults')}
                 </button>
+                {/* Stroke Smoothing */}
+                <div className="mt-1">
+                  <div className="flex items-center justify-between mb-0.5">
+                    <span className="text-[9px] text-muted-foreground">{t('sketch.strokeSmoothing', 'Smoothing')}</span>
+                    <span className="text-[9px] font-mono text-muted-foreground">{strokeSmoothing === 0 ? 'Off' : `${strokeSmoothing}x`}</span>
+                  </div>
+                  <Slider min={0} max={4} step={1} value={[strokeSmoothing]} onValueChange={([v]) => setStrokeSmoothing(v)} />
+                </div>
               </div>
             )}
 
