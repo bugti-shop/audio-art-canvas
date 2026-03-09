@@ -9,6 +9,14 @@ const NATIVE_SCOPES = [
   'https://www.googleapis.com/auth/drive.appdata',
   'https://www.googleapis.com/auth/drive.file',
 ];
+const NATIVE_SESSION_TTL = 365 * 24 * 3600 * 1000;
+const NATIVE_LOGIN_OPTIONS = {
+  scopes: NATIVE_SCOPES,
+  forceRefreshToken: true,
+  style: 'bottom' as const,
+  filterByAuthorizedAccounts: true,
+  autoSelectEnabled: true,
+};
 
 export interface GoogleUser {
   email: string;
@@ -33,17 +41,22 @@ const ensureNativeInit = async () => {
   nativeInitialized = true;
 };
 
+const getNativeAccessToken = (result: any): string => {
+  const r = result?.result;
+  return r?.accessToken?.token || r?.accessToken || '';
+};
+
 const nativeSignIn = async (): Promise<GoogleUser> => {
   await ensureNativeInit();
   const { SocialLogin } = await import('@capgo/capacitor-social-login');
 
   const result = await SocialLogin.login({
     provider: 'google',
-    options: { scopes: NATIVE_SCOPES },
+    options: NATIVE_LOGIN_OPTIONS,
   });
 
   const r = result.result as any;
-  const accessToken: string = r.accessToken?.token || r.accessToken || '';
+  const accessToken = getNativeAccessToken(result);
 
   // Try profile from result, fallback to userinfo API
   let email = r.profile?.email || r.email || '';
@@ -71,7 +84,7 @@ const nativeSignIn = async (): Promise<GoogleUser> => {
     name: name || email,
     picture,
     accessToken,
-    expiresAt: Date.now() + 365 * 24 * 3600 * 1000, // keep native session stable; real validity is checked by Drive API
+    expiresAt: Date.now() + NATIVE_SESSION_TTL,
   };
 
   await setSetting('googleUser', user);
@@ -89,34 +102,42 @@ const nativeRefresh = async (): Promise<GoogleUser> => {
   const stored = await getStoredGoogleUser();
   if (!stored) throw new Error('No stored Google user');
 
-  try {
-    await ensureNativeInit();
-    const { SocialLogin } = await import('@capgo/capacitor-social-login');
+  await ensureNativeInit();
+  const { SocialLogin } = await import('@capgo/capacitor-social-login');
 
-    // Try non-interactive refresh first (no account picker UI)
+  // 1) Try native refresh API (non-interactive)
+  try {
     await SocialLogin.refresh({
       provider: 'google',
-      options: {
-        scopes: NATIVE_SCOPES,
-        forceRefreshToken: true,
-      },
+      options: NATIVE_LOGIN_OPTIONS,
+    });
+  } catch (err) {
+    console.warn('Native refresh API failed, trying auto-select reauth:', err);
+  }
+
+  // 2) Re-auth with auto-select settings (usually no visible prompt)
+  try {
+    const result = await SocialLogin.login({
+      provider: 'google',
+      options: NATIVE_LOGIN_OPTIONS,
     });
 
-    // Plugin may expose a newer token via authorization helper
-    const auth = await SocialLogin.getAuthorizationCode({ provider: 'google' });
-    const refreshedToken = (auth as any)?.accessToken || stored.accessToken;
+    const r = result.result as any;
+    const accessToken = getNativeAccessToken(result);
+    if (!accessToken) return stored;
 
-    const user: GoogleUser = {
-      ...stored,
-      accessToken: refreshedToken,
-      expiresAt: Date.now() + 365 * 24 * 3600 * 1000,
+    const refreshedUser: GoogleUser = {
+      email: r.profile?.email || r.email || stored.email,
+      name: r.profile?.name || r.name || stored.name,
+      picture: r.profile?.imageUrl || r.profile?.picture || stored.picture,
+      accessToken,
+      expiresAt: Date.now() + NATIVE_SESSION_TTL,
     };
 
-    await setSetting('googleUser', user);
-    return user;
+    await setSetting('googleUser', refreshedUser);
+    return refreshedUser;
   } catch (err) {
-    // Keep session stable; caller will only ask re-login if API still returns 401 after retry
-    console.warn('Native silent refresh not available, reusing stored token:', err);
+    console.warn('Native reauth failed, keeping stored token:', err);
     return stored;
   }
 };
