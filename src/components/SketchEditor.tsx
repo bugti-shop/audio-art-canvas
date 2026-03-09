@@ -1271,6 +1271,17 @@ const createDefaultLayers = (): Layer[] => [
 
 // --- Shape Recognition ---
 
+const getPolygonArea = (points: Point[]): number => {
+  if (points.length < 3) return 0;
+  let area = 0;
+  for (let i = 0; i < points.length; i++) {
+    const p1 = points[i];
+    const p2 = points[(i + 1) % points.length];
+    area += p1.x * p2.y - p2.x * p1.y;
+  }
+  return Math.abs(area) / 2;
+};
+
 type RecognizedShape = 
   | { type: 'line'; x1: number; y1: number; x2: number; y2: number }
   | { type: 'rect'; x: number; y: number; w: number; h: number }
