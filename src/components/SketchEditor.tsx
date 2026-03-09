@@ -1276,6 +1276,7 @@ type RecognizedShape =
   | { type: 'rect'; x: number; y: number; w: number; h: number }
   | { type: 'circle'; cx: number; cy: number; rx: number; ry: number }
   | { type: 'triangle'; x1: number; y1: number; x2: number; y2: number; x3: number; y3: number }
+  | { type: 'star'; cx: number; cy: number; r: number }
   | null;
 
 const recognizeShape = (points: Point[]): RecognizedShape => {
@@ -1362,6 +1363,42 @@ const recognizeShape = (points: Point[]): RecognizedShape => {
         x2: top3[1].x, y2: top3[1].y,
         x3: top3[2].x, y3: top3[2].y,
       };
+    }
+  }
+
+  // --- Star detection: 5 corners with alternating in/out pattern ---
+  if (corners.length >= 5 && corners.length <= 7) {
+    const top5 = corners.slice(0, 5);
+    // Check if corners alternate between inner and outer radii from center
+    const dists = top5.map(c => Math.sqrt((c.x - cx) ** 2 + (c.y - cy) ** 2));
+    const avgDist = dists.reduce((a, b) => a + b, 0) / dists.length;
+    // Sort corners by angle from center
+    const withAngles = top5.map(c => ({ ...c, angle: Math.atan2(c.y - cy, c.x - cx) }));
+    withAngles.sort((a, b) => a.angle - b.angle);
+    const sortedDists = withAngles.map(c => Math.sqrt((c.x - cx) ** 2 + (c.y - cy) ** 2));
+    // Check alternating pattern (inner/outer)
+    let alternating = 0;
+    for (let i = 1; i < sortedDists.length; i++) {
+      const prev = sortedDists[i - 1] > avgDist;
+      const curr = sortedDists[i] > avgDist;
+      if (prev !== curr) alternating++;
+    }
+    // At least 3 alternations for 5 points = star-like
+    if (alternating >= 3) {
+      const maxR = Math.max(...dists);
+      return { type: 'star', cx, cy, r: maxR };
+    }
+    // Also detect star if 5 points are roughly evenly distributed around center
+    const angleDiffs: number[] = [];
+    for (let i = 1; i < withAngles.length; i++) {
+      angleDiffs.push(withAngles[i].angle - withAngles[i - 1].angle);
+    }
+    angleDiffs.push(2 * Math.PI + withAngles[0].angle - withAngles[withAngles.length - 1].angle);
+    const avgAngleDiff = (2 * Math.PI) / 5;
+    const angleDeviation = angleDiffs.reduce((sum, d) => sum + Math.abs(d - avgAngleDiff), 0) / angleDiffs.length;
+    if (angleDeviation < 0.5) {
+      const maxR = Math.max(...dists);
+      return { type: 'star', cx, cy, r: maxR };
     }
   }
 
@@ -1496,6 +1533,16 @@ const convertToCleanShape = (stroke: Stroke, shape: RecognizedShape): Stroke | n
         points: [
           { x: minX, y: minY, pressure },
           { x: maxX, y: maxY, pressure },
+        ],
+      };
+    }
+    case 'star': {
+      return {
+        ...stroke,
+        tool: 'star',
+        points: [
+          { x: shape.cx - shape.r, y: shape.cy - shape.r, pressure },
+          { x: shape.cx + shape.r, y: shape.cy + shape.r, pressure },
         ],
       };
     }
@@ -3415,7 +3462,7 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
   }, []);
 
   // Shape recognition state
-  const [shapeRecognitionEnabled, setShapeRecognitionEnabled] = useState(false);
+  const [shapeRecognitionEnabled, setShapeRecognitionEnabled] = useState(true);
 
   // SVG import ref
   const svgInputRef = useRef<HTMLInputElement>(null);
@@ -7319,6 +7366,93 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
         {eyedropperActive && (
           <div className="absolute top-2 left-2 bg-primary text-primary-foreground rounded-lg px-2 py-1 text-[10px] flex items-center gap-1">
             <Pipette className="h-3 w-3" />{t('sketch.tapToPickColor')}
+            {/* Fill color for selected strokes */}
+            {(() => {
+              const selStrokes = getSelectedStrokes();
+              if (selStrokes.length === 0) return null;
+              const currentFill = selStrokes[0]?.fillColor;
+              const currentFillOpacity = selStrokes[0]?.fillOpacity ?? 0.3;
+              return (
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 relative"
+                      title={t('sketch.fillColor')}
+                    >
+                      <Palette className="h-3.5 w-3.5" />
+                      {currentFill && (
+                        <span className="absolute bottom-0.5 right-0.5 w-2 h-2 rounded-full border border-border" style={{ backgroundColor: currentFill }} />
+                      )}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-3 bg-card" align="start" side="bottom">
+                    <p className="text-[10px] font-medium text-foreground mb-2">{t('sketch.fillColor')}</p>
+                    <div className="flex gap-1.5 flex-wrap mb-2">
+                      <button
+                        className={cn('w-6 h-6 rounded-full border-2 transition-transform active:scale-90 flex items-center justify-center',
+                          !currentFill ? 'border-primary scale-110' : 'border-border')}
+                        onClick={() => {
+                          const layer = layersRef.current.find(l => l.id === activeLayerId);
+                          if (!layer) return;
+                          undoStackRef.current = [...undoStackRef.current.slice(-(MAX_UNDO - 1)), cloneLayers(layersRef.current)];
+                          redoStackRef.current = [];
+                          for (const idx of selectedIndices) {
+                            const s = layer.strokes[idx];
+                            if (s) { delete s.fillColor; delete s.fillOpacity; }
+                          }
+                          redrawAll();
+                          emitChange();
+                          forceUpdate(n => n + 1);
+                        }}
+                        title={t('sketch.noFill')}
+                      >
+                        <X className="h-3 w-3 text-muted-foreground" />
+                      </button>
+                      {['#3b82f6','#ef4444','#22c55e','#f59e0b','#8b5cf6','#ec4899','#06b6d4','#f97316','#1a1a1a','#ffffff'].map(c => (
+                        <button key={c}
+                          className={cn('w-6 h-6 rounded-full border-2 transition-transform active:scale-90',
+                            currentFill === c ? 'border-primary scale-110' : 'border-border')}
+                          style={{ backgroundColor: c }}
+                          onClick={() => {
+                            const layer = layersRef.current.find(l => l.id === activeLayerId);
+                            if (!layer) return;
+                            undoStackRef.current = [...undoStackRef.current.slice(-(MAX_UNDO - 1)), cloneLayers(layersRef.current)];
+                            redoStackRef.current = [];
+                            for (const idx of selectedIndices) {
+                              const s = layer.strokes[idx];
+                              if (s) { s.fillColor = c; s.fillOpacity = s.fillOpacity ?? 0.3; }
+                            }
+                            redrawAll();
+                            emitChange();
+                            forceUpdate(n => n + 1);
+                          }}
+                        />
+                      ))}
+                    </div>
+                    {currentFill && (
+                      <div>
+                        <p className="text-[10px] text-muted-foreground mb-1">{t('sketch.fillOpacity')}: {Math.round(currentFillOpacity * 100)}%</p>
+                        <Slider min={5} max={100} step={5} value={[Math.round(currentFillOpacity * 100)]} onValueChange={([v]) => {
+                          const layer = layersRef.current.find(l => l.id === activeLayerId);
+                          if (!layer) return;
+                          undoStackRef.current = [...undoStackRef.current.slice(-(MAX_UNDO - 1)), cloneLayers(layersRef.current)];
+                          redoStackRef.current = [];
+                          for (const idx of selectedIndices) {
+                            const s = layer.strokes[idx];
+                            if (s) { s.fillOpacity = v / 100; }
+                          }
+                          redrawAll();
+                          emitChange();
+                          forceUpdate(n => n + 1);
+                        }} />
+                      </div>
+                    )}
+                  </PopoverContent>
+                </Popover>
+              );
+            })()}
           </div>
         )}
         {/* Selection floating actions */}
@@ -8922,6 +9056,23 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
             </div>
           </PopoverContent>
         </Popover>
+
+        {/* Shape Recognition toggle */}
+        <button
+          className={cn(
+            'h-10 w-10 flex-shrink-0 rounded-xl flex items-center justify-center transition-all duration-200',
+            shapeRecognitionEnabled
+              ? 'bg-primary/15 text-primary scale-105 ring-2 ring-primary/20'
+              : 'text-foreground/70 hover:bg-muted/80 hover:text-foreground active:scale-95'
+          )}
+          onClick={() => {
+            setShapeRecognitionEnabled(!shapeRecognitionEnabled);
+            toast.success(shapeRecognitionEnabled ? t('sketch.shapeRecognitionOff', 'Shape recognition off') : t('sketch.shapeRecognitionOn', 'Shape recognition on ✨'), { duration: 1500 });
+          }}
+          title={shapeRecognitionEnabled ? t('sketch.shapeRecognitionOff', 'Shape recognition off') : t('sketch.shapeRecognitionOn', 'Shape recognition on')}
+        >
+          <Wand2 className="h-5 w-5" strokeWidth={shapeRecognitionEnabled ? 2.5 : 1.8} />
+        </button>
 
         {/* Symmetry mode toggle */}
         <Popover open={openToolbarPopover === 'symmetry'} onOpenChange={(o) => setOpenToolbarPopover(o ? 'symmetry' : null)}>
