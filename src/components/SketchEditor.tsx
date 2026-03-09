@@ -1350,6 +1350,8 @@ const recognizeShape = (points: Point[]): RecognizedShape => {
   const cy = (minY + maxY) / 2;
   const rx = bw / 2;
   const ry = bh / 2;
+  const area = getPolygonArea(points);
+  const circularity = totalLen > 0 ? (4 * Math.PI * area) / (totalLen * totalLen) : 0;
 
   // --- Corner detection ---
   const corners = detectCorners(points, totalLen);
