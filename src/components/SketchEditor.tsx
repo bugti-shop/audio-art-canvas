@@ -1045,6 +1045,7 @@ const PressureCurveCanvas = memo(({ curve, onChange }: {
 });
 PressureCurveCanvas.displayName = 'PressureCurveCanvas';
 
+export const SketchEditor = memo(({ initialData, onChange, onImageExport, className }: SketchEditorProps) => {
 
   const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
