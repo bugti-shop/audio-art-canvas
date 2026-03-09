@@ -1553,12 +1553,12 @@ const detectCorners = (points: Point[], totalLen: number): Point[] => {
   const minDist = points.length * 0.1;
   const corners: Point[] = [];
   for (const a of angles) {
-    if (a.angle < 0.4) break; // ~23 degrees minimum
+    if (a.angle < 0.3) break; // ~17 degrees minimum (more sensitive)
     const p = points[a.idx];
-    const tooClose = corners.some(c => Math.sqrt((c.x - p.x) ** 2 + (c.y - p.y) ** 2) < totalLen * 0.08);
+    const tooClose = corners.some(c => Math.sqrt((c.x - p.x) ** 2 + (c.y - p.y) ** 2) < totalLen * 0.06);
     if (!tooClose) {
       corners.push(p);
-      if (corners.length >= 6) break;
+      if (corners.length >= 8) break;
     }
   }
   return corners;
