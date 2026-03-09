@@ -66,8 +66,6 @@ import android.content.Intent;
 import android.os.Bundle;
 import android.util.Log;
 
-import androidx.core.splashscreen.SplashScreen;
-
 import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.PluginHandle;
 
@@ -75,22 +73,26 @@ import ee.forgr.capacitor.social.login.GoogleProvider;
 import ee.forgr.capacitor.social.login.SocialLoginPlugin;
 import ee.forgr.capacitor.social.login.ModifiedMainActivityForSocialLoginPlugin;
 
+import nota.npd.com.DynamicIconPlugin;
+
 /**
  * Main Activity for Npd App
  * 
  * Handles:
  * 1. Google Sign-In via Capgo Social Login plugin
- * 2. Android 12+ SplashScreen API for instant startup (WhatsApp-style)
- *    - Splash shows only during cold start, not on every resume
- *    - Dismisses as fast as possible (~200ms)
- * 
- * Notifications are handled ENTIRELY by @capacitor/local-notifications plugin.
+ * 2. Dynamic launcher icon (retention feature)
  */
 public class MainActivity extends BridgeActivity implements ModifiedMainActivityForSocialLoginPlugin {
     
     private static final String TAG = "MainActivity";
-    
-    
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        // Register custom native plugins
+        registerPlugin(DynamicIconPlugin.class);
+    }
+
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         Log.d(TAG, "onActivityResult: requestCode=" + requestCode);
@@ -324,22 +326,7 @@ public class DynamicIconPlugin extends Plugin {
 }
 ```
 
-### Step 4: Register Plugin in MainActivity
-
-Add this to `MainActivity.java`:
-
-```java
-import nota.npd.com.DynamicIconPlugin;
-
-// Inside onCreate or at class level:
-@Override
-public void onCreate(Bundle savedInstanceState) {
-    super.onCreate(savedInstanceState);
-    registerPlugin(DynamicIconPlugin.class);
-}
-```
-
-### Step 5: JS Integration
+### Step 4: JS Integration
 
 The web-side code is in `src/utils/dynamicIcon.ts` — it calls the native plugin and falls back gracefully on web.
 
