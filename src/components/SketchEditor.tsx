@@ -1500,6 +1500,98 @@ const recognizeShape = (points: Point[]): RecognizedShape => {
     }
   }
 
+  // --- Moon detection: crescent shape (asymmetric, one side flatter) ---
+  // Approximate: if shape is roughly circular but points cluster away from one side
+  {
+    let circleErrCheck = 0;
+    for (const p of points) {
+      const nx = (p.x - cx) / rx;
+      const ny = (p.y - cy) / ry;
+      const d = Math.sqrt(nx * nx + ny * ny);
+      circleErrCheck += (d - 1) ** 2;
+    }
+    circleErrCheck = Math.sqrt(circleErrCheck / points.length);
+    // Moon: roughly circular but with a concave bite on one side
+    if (circleErrCheck < 0.35 && circleErrCheck > 0.15) {
+      // Check for asymmetric density (one half has fewer points)
+      const leftPoints = points.filter(p => p.x < cx).length;
+      const rightPoints = points.filter(p => p.x >= cx).length;
+      const ratio = Math.min(leftPoints, rightPoints) / Math.max(leftPoints, rightPoints);
+      if (ratio < 0.6) {
+        const r = Math.max(rx, ry);
+        return { type: 'moon', cx, cy, r };
+      }
+    }
+  }
+
+  // --- Cloud detection: bumpy top, flatter bottom ---
+  {
+    const topHalf = points.filter(p => p.y < cy);
+    const bottomHalf = points.filter(p => p.y >= cy);
+    if (topHalf.length > 5 && bottomHalf.length > 5) {
+      // Count direction changes in the top half (bumpiness)
+      const topSorted = [...topHalf].sort((a, b) => a.x - b.x);
+      let dirChanges = 0;
+      for (let i = 2; i < topSorted.length; i++) {
+        const d1 = topSorted[i - 1].y - topSorted[i - 2].y;
+        const d2 = topSorted[i].y - topSorted[i - 1].y;
+        if ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) dirChanges++;
+      }
+      const bumpiness = dirChanges / topSorted.length;
+      // Bottom should be relatively flat
+      const bottomYs = bottomHalf.map(p => p.y);
+      const bottomRange = Math.max(...bottomYs) - Math.min(...bottomYs);
+      const bottomFlatness = bottomRange / bh;
+      if (bumpiness > 0.15 && bottomFlatness < 0.4 && bw > bh * 0.8) {
+        return { type: 'cloud', cx, cy, rx, ry };
+      }
+    }
+  }
+
+  // --- Cylinder: tall rectangle-ish with curved top/bottom ---
+  if (bh > bw * 1.2) {
+    // Check if top and bottom are curved (elliptical)
+    const topBand = points.filter(p => p.y < minY + bh * 0.2);
+    const bottomBand = points.filter(p => p.y > maxY - bh * 0.2);
+    if (topBand.length > 3 && bottomBand.length > 3) {
+      const topXSpread = Math.max(...topBand.map(p => p.x)) - Math.min(...topBand.map(p => p.x));
+      const bottomXSpread = Math.max(...bottomBand.map(p => p.x)) - Math.min(...bottomBand.map(p => p.x));
+      // Both top and bottom should span most of the width
+      if (topXSpread > bw * 0.6 && bottomXSpread > bw * 0.6) {
+        // Check for vertical sides
+        const leftSide = points.filter(p => p.x < minX + bw * 0.15);
+        const rightSide = points.filter(p => p.x > maxX - bw * 0.15);
+        if (leftSide.length > 3 && rightSide.length > 3) {
+          return { type: 'cylinder', x: minX, y: minY, w: bw, h: bh };
+        }
+      }
+    }
+  }
+
+  // --- Cone: V-shape with wider bottom ---
+  if (bh > bw * 0.6) {
+    const topBand = points.filter(p => p.y < minY + bh * 0.2);
+    const bottomBand = points.filter(p => p.y > maxY - bh * 0.25);
+    if (topBand.length > 1 && bottomBand.length > 3) {
+      const topXSpread = Math.max(...topBand.map(p => p.x)) - Math.min(...topBand.map(p => p.x));
+      const bottomXSpread = Math.max(...bottomBand.map(p => p.x)) - Math.min(...bottomBand.map(p => p.x));
+      if (topXSpread < bw * 0.35 && bottomXSpread > bw * 0.5) {
+        return { type: 'cone', cx, cy, rx, ry };
+      }
+    }
+  }
+
+  // --- Cross / Plus detection: horizontal + vertical bar overlap ---
+  {
+    const hBand = points.filter(p => Math.abs(p.y - cy) < ry * 0.35);
+    const vBand = points.filter(p => Math.abs(p.x - cx) < rx * 0.35);
+    const hRatio = hBand.length / points.length;
+    const vRatio = vBand.length / points.length;
+    if (hRatio > 0.3 && vRatio > 0.3 && hRatio + vRatio > 0.7) {
+      return { type: 'cross', cx, cy, rx, ry };
+    }
+  }
+
   // --- Circle/Ellipse detection (fallback) ---
   let circleErr = 0;
   for (const p of points) {
