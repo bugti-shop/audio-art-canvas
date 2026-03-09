@@ -1276,6 +1276,7 @@ type RecognizedShape =
   | { type: 'rect'; x: number; y: number; w: number; h: number }
   | { type: 'circle'; cx: number; cy: number; rx: number; ry: number }
   | { type: 'triangle'; x1: number; y1: number; x2: number; y2: number; x3: number; y3: number }
+  | { type: 'star'; cx: number; cy: number; r: number }
   | null;
 
 const recognizeShape = (points: Point[]): RecognizedShape => {
