@@ -1,21 +1,44 @@
 // Google Drive API utilities for app data folder sync
-import { getValidAccessToken } from './googleAuth';
+import { getValidAccessToken, refreshGoogleToken } from './googleAuth';
 
 const DRIVE_API = 'https://www.googleapis.com/drive/v3';
 const DRIVE_UPLOAD_API = 'https://www.googleapis.com/upload/drive/v3';
 const APP_FOLDER_NAME = 'NPD_Sync_Data';
 
-// Get or create the app data folder in Drive
-export const getOrCreateAppFolder = async (): Promise<string> => {
+// Helper: fetch with automatic 401 retry (refresh token and retry once)
+const driveApiFetch = async (url: string, options: RequestInit = {}): Promise<Response> => {
   const token = await getValidAccessToken();
   if (!token) throw new Error('Not authenticated');
 
+  const res = await fetch(url, {
+    ...options,
+    headers: { ...options.headers, Authorization: `Bearer ${token}` },
+  });
+
+  if (res.status === 401) {
+    // Token was rejected — force refresh and retry once
+    try {
+      const refreshed = await refreshGoogleToken();
+      const retryRes = await fetch(url, {
+        ...options,
+        headers: { ...options.headers, Authorization: `Bearer ${refreshed.accessToken}` },
+      });
+      return retryRes;
+    } catch {
+      throw new Error('Authentication expired. Please sign in again.');
+    }
+  }
+
+  return res;
+};
+
+// Get or create the app data folder in Drive
+export const getOrCreateAppFolder = async (): Promise<string> => {
   // Search for existing folder
-  const searchRes = await fetch(
+  const searchRes = await driveApiFetch(
     `${DRIVE_API}/files?q=${encodeURIComponent(
       `name='${APP_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`
-    )}&spaces=drive&fields=files(id,name)`,
-    { headers: { Authorization: `Bearer ${token}` } }
+    )}&spaces=drive&fields=files(id,name)`
   );
 
   if (!searchRes.ok) throw new Error(`Drive search failed: ${searchRes.status}`);
@@ -26,12 +49,9 @@ export const getOrCreateAppFolder = async (): Promise<string> => {
   }
 
   // Create folder
-  const createRes = await fetch(`${DRIVE_API}/files`, {
+  const createRes = await driveApiFetch(`${DRIVE_API}/files`, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       name: APP_FOLDER_NAME,
       mimeType: 'application/vnd.google-apps.folder',
@@ -48,19 +68,13 @@ export const listDriveFiles = async (
   folderId: string,
   pageToken?: string
 ): Promise<{ files: DriveFile[]; nextPageToken?: string }> => {
-  const token = await getValidAccessToken();
-  if (!token) throw new Error('Not authenticated');
-
   let url = `${DRIVE_API}/files?q=${encodeURIComponent(
     `'${folderId}' in parents and trashed=false`
   )}&fields=files(id,name,modifiedTime,size,appProperties)&pageSize=100`;
 
   if (pageToken) url += `&pageToken=${pageToken}`;
 
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-
+  const res = await driveApiFetch(url);
   if (!res.ok) throw new Error(`Failed to list files: ${res.status}`);
   return res.json();
 };
@@ -72,9 +86,6 @@ export const uploadJsonFile = async (
   data: any,
   existingFileId?: string
 ): Promise<string> => {
-  const token = await getValidAccessToken();
-  if (!token) throw new Error('Not authenticated');
-
   const metadata: any = {
     name: fileName,
     mimeType: 'application/json',
@@ -104,12 +115,9 @@ export const uploadJsonFile = async (
     ? `${DRIVE_UPLOAD_API}/files/${existingFileId}?uploadType=multipart`
     : `${DRIVE_UPLOAD_API}/files?uploadType=multipart`;
 
-  const res = await fetch(url, {
+  const res = await driveApiFetch(url, {
     method: existingFileId ? 'PATCH' : 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': `multipart/related; boundary=${boundary}`,
-    },
+    headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
     body,
   });
 
@@ -124,27 +132,14 @@ export const uploadJsonFile = async (
 
 // Download a file's content
 export const downloadFileContent = async <T = any>(fileId: string): Promise<T> => {
-  const token = await getValidAccessToken();
-  if (!token) throw new Error('Not authenticated');
-
-  const res = await fetch(`${DRIVE_API}/files/${fileId}?alt=media`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-
+  const res = await driveApiFetch(`${DRIVE_API}/files/${fileId}?alt=media`);
   if (!res.ok) throw new Error(`Download failed: ${res.status}`);
   return res.json();
 };
 
 // Delete a file (move to trash)
 export const deleteFile = async (fileId: string): Promise<void> => {
-  const token = await getValidAccessToken();
-  if (!token) throw new Error('Not authenticated');
-
-  const res = await fetch(`${DRIVE_API}/files/${fileId}`, {
-    method: 'DELETE',
-    headers: { Authorization: `Bearer ${token}` },
-  });
-
+  const res = await driveApiFetch(`${DRIVE_API}/files/${fileId}`, { method: 'DELETE' });
   if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
 };
 
@@ -153,13 +148,7 @@ export const getDriveStorageQuota = async (): Promise<{
   usage: number;
   limit: number;
 }> => {
-  const token = await getValidAccessToken();
-  if (!token) throw new Error('Not authenticated');
-
-  const res = await fetch(`${DRIVE_API}/about?fields=storageQuota`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-
+  const res = await driveApiFetch(`${DRIVE_API}/about?fields=storageQuota`);
   if (!res.ok) throw new Error(`Failed to get quota: ${res.status}`);
   const data = await res.json();
 
@@ -171,13 +160,7 @@ export const getDriveStorageQuota = async (): Promise<{
 
 // Get changes start token for incremental sync
 export const getStartPageToken = async (): Promise<string> => {
-  const token = await getValidAccessToken();
-  if (!token) throw new Error('Not authenticated');
-
-  const res = await fetch(`${DRIVE_API}/changes/startPageToken`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-
+  const res = await driveApiFetch(`${DRIVE_API}/changes/startPageToken`);
   if (!res.ok) throw new Error(`Failed to get start token: ${res.status}`);
   const data = await res.json();
   return data.startPageToken;
@@ -187,14 +170,9 @@ export const getStartPageToken = async (): Promise<string> => {
 export const getChanges = async (
   pageToken: string
 ): Promise<{ changes: DriveChange[]; newStartPageToken?: string; nextPageToken?: string }> => {
-  const token = await getValidAccessToken();
-  if (!token) throw new Error('Not authenticated');
-
-  const res = await fetch(
-    `${DRIVE_API}/changes?pageToken=${pageToken}&fields=changes(fileId,file(id,name,modifiedTime,trashed,appProperties),removed),newStartPageToken,nextPageToken`,
-    { headers: { Authorization: `Bearer ${token}` } }
+  const res = await driveApiFetch(
+    `${DRIVE_API}/changes?pageToken=${pageToken}&fields=changes(fileId,file(id,name,modifiedTime,trashed,appProperties),removed),newStartPageToken,nextPageToken`
   );
-
   if (!res.ok) throw new Error(`Failed to get changes: ${res.status}`);
   return res.json();
 };
