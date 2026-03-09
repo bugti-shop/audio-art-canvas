@@ -1536,6 +1536,16 @@ const convertToCleanShape = (stroke: Stroke, shape: RecognizedShape): Stroke | n
         ],
       };
     }
+    case 'star': {
+      return {
+        ...stroke,
+        tool: 'star',
+        points: [
+          { x: shape.cx - shape.r, y: shape.cy - shape.r, pressure },
+          { x: shape.cx + shape.r, y: shape.cy + shape.r, pressure },
+        ],
+      };
+    }
   }
 };
 
