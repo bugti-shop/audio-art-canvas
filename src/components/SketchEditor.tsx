@@ -1271,6 +1271,17 @@ const createDefaultLayers = (): Layer[] => [
 
 // --- Shape Recognition ---
 
+const getPolygonArea = (points: Point[]): number => {
+  if (points.length < 3) return 0;
+  let area = 0;
+  for (let i = 0; i < points.length; i++) {
+    const p1 = points[i];
+    const p2 = points[(i + 1) % points.length];
+    area += p1.x * p2.y - p2.x * p1.y;
+  }
+  return Math.abs(area) / 2;
+};
+
 type RecognizedShape = 
   | { type: 'line'; x1: number; y1: number; x2: number; y2: number }
   | { type: 'rect'; x: number; y: number; w: number; h: number }
@@ -1302,7 +1313,7 @@ const recognizeShape = (points: Point[]): RecognizedShape => {
 
   // Check if the path is closed (first ~= last)
   const closeDist = Math.sqrt((first.x - last.x) ** 2 + (first.y - last.y) ** 2);
-  const isClosed = closeDist < totalLen * 0.2;
+  const isClosed = closeDist < Math.max(18, totalLen * 0.16);
 
   // --- Arrow detection (line with a hook at the end) ---
   if (!isClosed) {
@@ -1339,6 +1350,8 @@ const recognizeShape = (points: Point[]): RecognizedShape => {
   const cy = (minY + maxY) / 2;
   const rx = bw / 2;
   const ry = bh / 2;
+  const area = getPolygonArea(points);
+  const circularity = totalLen > 0 ? (4 * Math.PI * area) / (totalLen * totalLen) : 0;
 
   // --- Corner detection ---
   const corners = detectCorners(points, totalLen);
@@ -1395,9 +1408,9 @@ const recognizeShape = (points: Point[]): RecognizedShape => {
   if (numCorners >= 4 && numCorners <= 6) {
     const top4 = corners.slice(0, 4);
     const rectErr = getRectangleFit(top4, minX, minY, maxX, maxY);
-    if (rectErr < 0.3) {
+    if (rectErr < 0.24 && circularity < 0.88) {
       const aspectRatio = bw / bh;
-      if (aspectRatio > 0.8 && aspectRatio < 1.2) {
+      if (aspectRatio > 0.85 && aspectRatio < 1.15) {
         const size = Math.max(bw, bh);
         return { type: 'square', x: cx - size / 2, y: cy - size / 2, size };
       }
@@ -1421,14 +1434,14 @@ const recognizeShape = (points: Point[]): RecognizedShape => {
   }
 
   // --- Triangle: 3 corners ---
-  if (numCorners >= 3 && numCorners <= 5) {
+  if (numCorners >= 3 && numCorners <= 4) {
     const top3 = corners.slice(0, 3);
     const triArea = Math.abs(
       (top3[1].x - top3[0].x) * (top3[2].y - top3[0].y) -
       (top3[2].x - top3[0].x) * (top3[1].y - top3[0].y)
     ) / 2;
     const bboxArea = bw * bh;
-    if (triArea > bboxArea * 0.15 && triArea < bboxArea * 0.75) {
+    if (triArea > bboxArea * 0.2 && triArea < bboxArea * 0.72 && circularity < 0.75) {
       return {
         type: 'triangle',
         x1: top3[0].x, y1: top3[0].y,
@@ -1512,12 +1525,12 @@ const recognizeShape = (points: Point[]): RecognizedShape => {
     }
     circleErrCheck = Math.sqrt(circleErrCheck / points.length);
     // Moon: roughly circular but with a concave bite on one side
-    if (circleErrCheck < 0.35 && circleErrCheck > 0.15) {
+    if (circleErrCheck < 0.3 && circleErrCheck > 0.14 && circularity > 0.45 && circularity < 0.82) {
       // Check for asymmetric density (one half has fewer points)
       const leftPoints = points.filter(p => p.x < cx).length;
       const rightPoints = points.filter(p => p.x >= cx).length;
       const ratio = Math.min(leftPoints, rightPoints) / Math.max(leftPoints, rightPoints);
-      if (ratio < 0.6) {
+      if (ratio < 0.5) {
         const r = Math.max(rx, ry);
         return { type: 'moon', cx, cy, r };
       }
@@ -1542,7 +1555,7 @@ const recognizeShape = (points: Point[]): RecognizedShape => {
       const bottomYs = bottomHalf.map(p => p.y);
       const bottomRange = Math.max(...bottomYs) - Math.min(...bottomYs);
       const bottomFlatness = bottomRange / bh;
-      if (bumpiness > 0.15 && bottomFlatness < 0.4 && bw > bh * 0.8) {
+      if (bumpiness > 0.12 && bumpiness < 0.45 && bottomFlatness < 0.34 && bw > bh * 1.05 && numCorners >= 6) {
         return { type: 'cloud', cx, cy, rx, ry };
       }
     }
@@ -1557,11 +1570,11 @@ const recognizeShape = (points: Point[]): RecognizedShape => {
       const topXSpread = Math.max(...topBand.map(p => p.x)) - Math.min(...topBand.map(p => p.x));
       const bottomXSpread = Math.max(...bottomBand.map(p => p.x)) - Math.min(...bottomBand.map(p => p.x));
       // Both top and bottom should span most of the width
-      if (topXSpread > bw * 0.6 && bottomXSpread > bw * 0.6) {
+      if (topXSpread > bw * 0.65 && bottomXSpread > bw * 0.65 && Math.abs(topXSpread - bottomXSpread) < bw * 0.22) {
         // Check for vertical sides
         const leftSide = points.filter(p => p.x < minX + bw * 0.15);
         const rightSide = points.filter(p => p.x > maxX - bw * 0.15);
-        if (leftSide.length > 3 && rightSide.length > 3) {
+        if (leftSide.length > 3 && rightSide.length > 3 && numCorners <= 5) {
           return { type: 'cylinder', x: minX, y: minY, w: bw, h: bh };
         }
       }
@@ -1575,7 +1588,7 @@ const recognizeShape = (points: Point[]): RecognizedShape => {
     if (topBand.length > 1 && bottomBand.length > 3) {
       const topXSpread = Math.max(...topBand.map(p => p.x)) - Math.min(...topBand.map(p => p.x));
       const bottomXSpread = Math.max(...bottomBand.map(p => p.x)) - Math.min(...bottomBand.map(p => p.x));
-      if (topXSpread < bw * 0.35 && bottomXSpread > bw * 0.5) {
+      if (topXSpread < bw * 0.28 && bottomXSpread > bw * 0.6 && numCorners <= 5) {
         return { type: 'cone', cx, cy, rx, ry };
       }
     }
@@ -1587,7 +1600,7 @@ const recognizeShape = (points: Point[]): RecognizedShape => {
     const vBand = points.filter(p => Math.abs(p.x - cx) < rx * 0.35);
     const hRatio = hBand.length / points.length;
     const vRatio = vBand.length / points.length;
-    if (hRatio > 0.3 && vRatio > 0.3 && hRatio + vRatio > 0.7) {
+    if (numCorners >= 8 && hRatio > 0.33 && vRatio > 0.33 && hRatio + vRatio > 0.8) {
       return { type: 'cross', cx, cy, rx, ry };
     }
   }
@@ -1601,7 +1614,7 @@ const recognizeShape = (points: Point[]): RecognizedShape => {
     circleErr += (d - 1) ** 2;
   }
   circleErr = Math.sqrt(circleErr / points.length);
-  if (circleErr < 0.22) {
+  if (circleErr < 0.19 && circularity > 0.72) {
     return { type: 'circle', cx, cy, rx, ry };
   }
 
@@ -1651,9 +1664,9 @@ const detectCorners = (points: Point[], totalLen: number): Point[] => {
   const minDist = points.length * 0.1;
   const corners: Point[] = [];
   for (const a of angles) {
-    if (a.angle < 0.3) break; // ~17 degrees minimum (more sensitive)
+    if (a.angle < 0.38) break; // ~22 degrees minimum to reduce noisy corners
     const p = points[a.idx];
-    const tooClose = corners.some(c => Math.sqrt((c.x - p.x) ** 2 + (c.y - p.y) ** 2) < totalLen * 0.06);
+    const tooClose = corners.some(c => Math.sqrt((c.x - p.x) ** 2 + (c.y - p.y) ** 2) < totalLen * 0.08);
     if (!tooClose) {
       corners.push(p);
       if (corners.length >= 8) break;
@@ -7685,12 +7698,36 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
         {eyedropperActive && (
           <div className="absolute top-2 left-2 bg-primary text-primary-foreground rounded-lg px-2 py-1 text-[10px] flex items-center gap-1">
             <Pipette className="h-3 w-3" />{t('sketch.tapToPickColor')}
-            {/* Fill color for selected strokes */}
+          </div>
+        )}
+        {/* Selection floating actions */}
+        {hasSelection && tool === 'select' && (
+          <div className="absolute top-2 left-2 bg-card/95 backdrop-blur-sm border border-border rounded-lg px-1 py-1 flex items-center gap-0.5">
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleCopySelection} title={t('sketch.copy')}>
+              <Copy className="h-3.5 w-3.5" />
+            </Button>
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handlePasteSelection} title={t('sketch.paste')}>
+              <Clipboard className="h-3.5 w-3.5" />
+            </Button>
+            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={handleDeleteSelection} title={t('sketch.delete')}>
+              <Trash className="h-3.5 w-3.5" />
+            </Button>
+            <Button variant="ghost" size="icon" className="h-7 w-7 text-primary" onClick={handleSaveAsSticker} title={t('sketch.saveAsSticker')}>
+              <BookmarkPlus className="h-3.5 w-3.5" />
+            </Button>
+            {/* Fill color for selected shape strokes */}
             {(() => {
-              const selStrokes = getSelectedStrokes();
-              if (selStrokes.length === 0) return null;
-              const currentFill = selStrokes[0]?.fillColor;
-              const currentFillOpacity = selStrokes[0]?.fillOpacity ?? 0.3;
+              const layer = layersRef.current.find(l => l.id === activeLayerId);
+              if (!layer) return null;
+              const selectedShapeIndices = selectedIndices.filter(idx => {
+                const s = layer.strokes[idx];
+                return !!s && isShapeTool(s.tool);
+              });
+              if (selectedShapeIndices.length === 0) return null;
+              const selectedShapeStrokes = selectedShapeIndices.map(idx => layer.strokes[idx]);
+              const currentFill = selectedShapeStrokes[0]?.fillColor;
+              const currentFillOpacity = selectedShapeStrokes[0]?.fillOpacity ?? 0.3;
+
               return (
                 <Popover>
                   <PopoverTrigger asChild>
@@ -7713,11 +7750,9 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
                         className={cn('w-6 h-6 rounded-full border-2 transition-transform active:scale-90 flex items-center justify-center',
                           !currentFill ? 'border-primary scale-110' : 'border-border')}
                         onClick={() => {
-                          const layer = layersRef.current.find(l => l.id === activeLayerId);
-                          if (!layer) return;
                           undoStackRef.current = [...undoStackRef.current.slice(-(MAX_UNDO - 1)), cloneLayers(layersRef.current)];
                           redoStackRef.current = [];
-                          for (const idx of selectedIndices) {
+                          for (const idx of selectedShapeIndices) {
                             const s = layer.strokes[idx];
                             if (s) { delete s.fillColor; delete s.fillOpacity; }
                           }
@@ -7735,13 +7770,14 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
                             currentFill === c ? 'border-primary scale-110' : 'border-border')}
                           style={{ backgroundColor: c }}
                           onClick={() => {
-                            const layer = layersRef.current.find(l => l.id === activeLayerId);
-                            if (!layer) return;
                             undoStackRef.current = [...undoStackRef.current.slice(-(MAX_UNDO - 1)), cloneLayers(layersRef.current)];
                             redoStackRef.current = [];
-                            for (const idx of selectedIndices) {
+                            for (const idx of selectedShapeIndices) {
                               const s = layer.strokes[idx];
-                              if (s) { s.fillColor = c; s.fillOpacity = s.fillOpacity ?? 0.3; }
+                              if (s) {
+                                s.fillColor = c;
+                                s.fillOpacity = s.fillOpacity ?? 0.3;
+                              }
                             }
                             redrawAll();
                             emitChange();
@@ -7754,13 +7790,11 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
                       <div>
                         <p className="text-[10px] text-muted-foreground mb-1">{t('sketch.fillOpacity')}: {Math.round(currentFillOpacity * 100)}%</p>
                         <Slider min={5} max={100} step={5} value={[Math.round(currentFillOpacity * 100)]} onValueChange={([v]) => {
-                          const layer = layersRef.current.find(l => l.id === activeLayerId);
-                          if (!layer) return;
                           undoStackRef.current = [...undoStackRef.current.slice(-(MAX_UNDO - 1)), cloneLayers(layersRef.current)];
                           redoStackRef.current = [];
-                          for (const idx of selectedIndices) {
+                          for (const idx of selectedShapeIndices) {
                             const s = layer.strokes[idx];
-                            if (s) { s.fillOpacity = v / 100; }
+                            if (s) s.fillOpacity = v / 100;
                           }
                           redrawAll();
                           emitChange();
@@ -7772,29 +7806,12 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
                 </Popover>
               );
             })()}
-          </div>
-        )}
-        {/* Selection floating actions */}
-        {hasSelection && tool === 'select' && (
-          <div className="absolute top-2 left-2 bg-card/95 backdrop-blur-sm border border-border rounded-lg px-1 py-1 flex items-center gap-0.5">
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleCopySelection} title={t('sketch.copy')}>
-              <Copy className="h-3.5 w-3.5" />
-            </Button>
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handlePasteSelection} title={t('sketch.paste')}>
-              <Clipboard className="h-3.5 w-3.5" />
-            </Button>
-            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={handleDeleteSelection} title={t('sketch.delete')}>
-              <Trash className="h-3.5 w-3.5" />
-            </Button>
-            <Button variant="ghost" size="icon" className="h-7 w-7 text-primary" onClick={handleSaveAsSticker} title={t('sketch.saveAsSticker')}>
-              <BookmarkPlus className="h-3.5 w-3.5" />
-            </Button>
             {/* Clip mask toggle for selected shape strokes */}
             {(() => {
               const selStrokes = getSelectedStrokes();
-              const hasShapeSelected = selStrokes.some(s => isShapeTool(s.tool));
-              if (!hasShapeSelected) return null;
-              const allClipped = selStrokes.filter(s => isShapeTool(s.tool)).every(s => s.isClipMask);
+              const selectedShapeStrokes = selStrokes.filter(s => isShapeTool(s.tool));
+              if (selectedShapeStrokes.length === 0) return null;
+              const allClipped = selectedShapeStrokes.every(s => s.isClipMask);
               return (
                 <Button
                   variant={allClipped ? "default" : "ghost"}
