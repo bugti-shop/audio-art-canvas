@@ -1274,9 +1274,16 @@ const createDefaultLayers = (): Layer[] => [
 type RecognizedShape = 
   | { type: 'line'; x1: number; y1: number; x2: number; y2: number }
   | { type: 'rect'; x: number; y: number; w: number; h: number }
+  | { type: 'square'; x: number; y: number; size: number }
   | { type: 'circle'; cx: number; cy: number; rx: number; ry: number }
   | { type: 'triangle'; x1: number; y1: number; x2: number; y2: number; x3: number; y3: number }
   | { type: 'star'; cx: number; cy: number; r: number }
+  | { type: 'diamond'; cx: number; cy: number; rx: number; ry: number }
+  | { type: 'pentagon'; cx: number; cy: number; r: number }
+  | { type: 'polygon'; cx: number; cy: number; r: number }
+  | { type: 'heart'; cx: number; cy: number; rx: number; ry: number }
+  | { type: 'arrow'; x1: number; y1: number; x2: number; y2: number }
+  | { type: 'trapezoid'; cx: number; cy: number; rx: number; ry: number }
   | null;
 
 const recognizeShape = (points: Point[]): RecognizedShape => {
@@ -1289,13 +1296,21 @@ const recognizeShape = (points: Point[]): RecognizedShape => {
 
   // Check if the path is closed (first ~= last)
   const closeDist = Math.sqrt((first.x - last.x) ** 2 + (first.y - last.y) ** 2);
-  const isClosed = closeDist < totalLen * 0.15;
+  const isClosed = closeDist < totalLen * 0.2;
 
-  // --- Line detection ---
+  // --- Arrow detection (line with a hook at the end) ---
   if (!isClosed) {
     const lineErr = getLineDeviation(points, first, last);
     const segLen = Math.sqrt((last.x - first.x) ** 2 + (last.y - first.y) ** 2);
-    if (segLen > 20 && lineErr < 0.06) {
+    // Check if the last ~15% of points deviate (arrowhead)
+    const arrowStart = Math.floor(points.length * 0.85);
+    const mainPoints = points.slice(0, arrowStart);
+    const mainLineErr = mainPoints.length > 2 ? getLineDeviation(mainPoints, first, mainPoints[mainPoints.length - 1]) : 1;
+    if (segLen > 20 && mainLineErr < 0.08 && lineErr > 0.06) {
+      return { type: 'arrow', x1: first.x, y1: first.y, x2: last.x, y2: last.y };
+    }
+    // Straight line
+    if (segLen > 20 && lineErr < 0.08) {
       return { type: 'line', x1: first.x, y1: first.y, x2: last.x, y2: last.y };
     }
   }
@@ -1319,27 +1334,95 @@ const recognizeShape = (points: Point[]): RecognizedShape => {
   const rx = bw / 2;
   const ry = bh / 2;
 
-  // --- Corner detection for rectangle/triangle/star (check BEFORE circle) ---
+  // --- Corner detection ---
   const corners = detectCorners(points, totalLen);
+  const numCorners = corners.length;
 
-  // Rectangle: ~4 corners, roughly right angles
-  if (corners.length >= 4 && corners.length <= 6) {
+  // --- Heart detection: indentation at the top center ---
+  const topPoints = points.filter(p => p.y < cy - ry * 0.3);
+  if (topPoints.length > 3) {
+    const topCenterPoints = topPoints.filter(p => Math.abs(p.x - cx) < rx * 0.4);
+    if (topCenterPoints.length > 0) {
+      const avgTopCenterY = topCenterPoints.reduce((s, p) => s + p.y, 0) / topCenterPoints.length;
+      const topEdgeY = minY;
+      const indentDepth = (avgTopCenterY - topEdgeY) / bh;
+      if (indentDepth > 0.08 && indentDepth < 0.4) {
+        // Check that bottom is pointed (narrower)
+        const bottomPoints = points.filter(p => p.y > cy + ry * 0.5);
+        if (bottomPoints.length > 0) {
+          const bottomWidth = Math.max(...bottomPoints.map(p => p.x)) - Math.min(...bottomPoints.map(p => p.x));
+          if (bottomWidth < bw * 0.5) {
+            return { type: 'heart', cx, cy, rx, ry };
+          }
+        }
+      }
+    }
+  }
+
+  // --- Diamond: 4 corners near edge midpoints ---
+  if (numCorners >= 4 && numCorners <= 5) {
+    const top4 = corners.slice(0, 4);
+    const diamondTargets = [
+      { x: cx, y: minY }, { x: maxX, y: cy }, { x: cx, y: maxY }, { x: minX, y: cy }
+    ];
+    const diag = Math.sqrt(bw * bw + bh * bh);
+    let diamondErr = 0;
+    const usedD = new Set<number>();
+    for (const dt of diamondTargets) {
+      let bestDist = Infinity;
+      let bestIdx = -1;
+      for (let i = 0; i < top4.length; i++) {
+        if (usedD.has(i)) continue;
+        const d = Math.sqrt((top4[i].x - dt.x) ** 2 + (top4[i].y - dt.y) ** 2);
+        if (d < bestDist) { bestDist = d; bestIdx = i; }
+      }
+      if (bestIdx >= 0) { usedD.add(bestIdx); diamondErr += bestDist; }
+      else diamondErr += diag;
+    }
+    const normDiamondErr = diamondErr / diag;
+    if (normDiamondErr < 0.35) {
+      return { type: 'diamond', cx, cy, rx, ry };
+    }
+  }
+
+  // --- Square/Rectangle: 4 corners near bbox corners ---
+  if (numCorners >= 4 && numCorners <= 6) {
     const top4 = corners.slice(0, 4);
     const rectErr = getRectangleFit(top4, minX, minY, maxX, maxY);
-    if (rectErr < 0.25) {
+    if (rectErr < 0.3) {
+      const aspectRatio = bw / bh;
+      if (aspectRatio > 0.8 && aspectRatio < 1.2) {
+        const size = Math.max(bw, bh);
+        return { type: 'square', x: cx - size / 2, y: cy - size / 2, size };
+      }
       return { type: 'rect', x: minX, y: minY, w: bw, h: bh };
     }
   }
 
-  // Triangle: ~3 corners
-  if (corners.length >= 3 && corners.length <= 5) {
+  // --- Trapezoid: 4 corners where top edge is shorter than bottom ---
+  if (numCorners >= 4 && numCorners <= 5) {
+    const top4 = corners.slice(0, 4);
+    // Sort by Y to find top and bottom pairs
+    const sorted = [...top4].sort((a, b) => a.y - b.y);
+    const topPair = sorted.slice(0, 2).sort((a, b) => a.x - b.x);
+    const bottomPair = sorted.slice(2, 4).sort((a, b) => a.x - b.x);
+    const topWidth = Math.abs(topPair[1].x - topPair[0].x);
+    const bottomWidth = Math.abs(bottomPair[1].x - bottomPair[0].x);
+    const ratio = topWidth / bottomWidth;
+    if (ratio > 0.3 && ratio < 0.85 && topWidth > bw * 0.2) {
+      return { type: 'trapezoid', cx, cy, rx, ry };
+    }
+  }
+
+  // --- Triangle: 3 corners ---
+  if (numCorners >= 3 && numCorners <= 5) {
     const top3 = corners.slice(0, 3);
     const triArea = Math.abs(
       (top3[1].x - top3[0].x) * (top3[2].y - top3[0].y) -
       (top3[2].x - top3[0].x) * (top3[1].y - top3[0].y)
     ) / 2;
     const bboxArea = bw * bh;
-    if (triArea > bboxArea * 0.2 && triArea < bboxArea * 0.75) {
+    if (triArea > bboxArea * 0.15 && triArea < bboxArea * 0.75) {
       return {
         type: 'triangle',
         x1: top3[0].x, y1: top3[0].y,
@@ -1349,38 +1432,69 @@ const recognizeShape = (points: Point[]): RecognizedShape => {
     }
   }
 
-  // --- Star detection ---
-  if (corners.length >= 5 && corners.length <= 7) {
+  // --- Pentagon: 5 corners roughly evenly spaced ---
+  if (numCorners >= 5 && numCorners <= 6) {
     const top5 = corners.slice(0, 5);
-    const dists = top5.map(c => Math.sqrt((c.x - cx) ** 2 + (c.y - cy) ** 2));
-    const avgDist = dists.reduce((a, b) => a + b, 0) / dists.length;
     const withAngles = top5.map(c => ({ ...c, angle: Math.atan2(c.y - cy, c.x - cx) }));
     withAngles.sort((a, b) => a.angle - b.angle);
-    const sortedDists = withAngles.map(c => Math.sqrt((c.x - cx) ** 2 + (c.y - cy) ** 2));
+    const dists = withAngles.map(c => Math.sqrt((c.x - cx) ** 2 + (c.y - cy) ** 2));
+    const avgDist = dists.reduce((a, b) => a + b, 0) / dists.length;
+    // Check roughly equal distances from center (no alternating = not star)
+    const distDeviation = dists.reduce((sum, d) => sum + Math.abs(d - avgDist), 0) / dists.length / avgDist;
+    
+    // Check alternating for star detection
+    const sortedDists = dists;
     let alternating = 0;
     for (let i = 1; i < sortedDists.length; i++) {
       const prev = sortedDists[i - 1] > avgDist;
       const curr = sortedDists[i] > avgDist;
       if (prev !== curr) alternating++;
     }
-    if (alternating >= 3) {
+    
+    // Star: alternating inner/outer pattern
+    if (alternating >= 3 && distDeviation > 0.15) {
       const maxR = Math.max(...dists);
       return { type: 'star', cx, cy, r: maxR };
     }
-    const angleDiffs: number[] = [];
-    for (let i = 1; i < withAngles.length; i++) {
-      angleDiffs.push(withAngles[i].angle - withAngles[i - 1].angle);
-    }
-    angleDiffs.push(2 * Math.PI + withAngles[0].angle - withAngles[withAngles.length - 1].angle);
-    const avgAngleDiff = (2 * Math.PI) / 5;
-    const angleDeviation = angleDiffs.reduce((sum, d) => sum + Math.abs(d - avgAngleDiff), 0) / angleDiffs.length;
-    if (angleDeviation < 0.5) {
-      const maxR = Math.max(...dists);
-      return { type: 'star', cx, cy, r: maxR };
+    
+    // Pentagon: roughly equal distances
+    if (distDeviation < 0.25) {
+      const angleDiffs: number[] = [];
+      for (let i = 1; i < withAngles.length; i++) {
+        angleDiffs.push(withAngles[i].angle - withAngles[i - 1].angle);
+      }
+      angleDiffs.push(2 * Math.PI + withAngles[0].angle - withAngles[withAngles.length - 1].angle);
+      const avgAngleDiff = (2 * Math.PI) / 5;
+      const angleDeviation = angleDiffs.reduce((sum, d) => sum + Math.abs(d - avgAngleDiff), 0) / angleDiffs.length;
+      if (angleDeviation < 0.6) {
+        return { type: 'pentagon', cx, cy, r: avgDist };
+      }
     }
   }
 
-  // --- Circle/Ellipse detection (LAST, fallback) ---
+  // --- Hexagon: 6 corners roughly evenly spaced ---
+  if (numCorners >= 6 && numCorners <= 8) {
+    const top6 = corners.slice(0, 6);
+    const withAngles = top6.map(c => ({ ...c, angle: Math.atan2(c.y - cy, c.x - cx) }));
+    withAngles.sort((a, b) => a.angle - b.angle);
+    const dists = withAngles.map(c => Math.sqrt((c.x - cx) ** 2 + (c.y - cy) ** 2));
+    const avgDist = dists.reduce((a, b) => a + b, 0) / dists.length;
+    const distDeviation = dists.reduce((sum, d) => sum + Math.abs(d - avgDist), 0) / dists.length / avgDist;
+    if (distDeviation < 0.3) {
+      const angleDiffs: number[] = [];
+      for (let i = 1; i < withAngles.length; i++) {
+        angleDiffs.push(withAngles[i].angle - withAngles[i - 1].angle);
+      }
+      angleDiffs.push(2 * Math.PI + withAngles[0].angle - withAngles[withAngles.length - 1].angle);
+      const avgAngleDiff = (2 * Math.PI) / 6;
+      const angleDeviation = angleDiffs.reduce((sum, d) => sum + Math.abs(d - avgAngleDiff), 0) / angleDiffs.length;
+      if (angleDeviation < 0.6) {
+        return { type: 'polygon', cx, cy, r: avgDist };
+      }
+    }
+  }
+
+  // --- Circle/Ellipse detection (fallback) ---
   let circleErr = 0;
   for (const p of points) {
     const nx = (p.x - cx) / rx;
@@ -1389,7 +1503,7 @@ const recognizeShape = (points: Point[]): RecognizedShape => {
     circleErr += (d - 1) ** 2;
   }
   circleErr = Math.sqrt(circleErr / points.length);
-  if (circleErr < 0.2) {
+  if (circleErr < 0.22) {
     return { type: 'circle', cx, cy, rx, ry };
   }
 
@@ -1439,12 +1553,12 @@ const detectCorners = (points: Point[], totalLen: number): Point[] => {
   const minDist = points.length * 0.1;
   const corners: Point[] = [];
   for (const a of angles) {
-    if (a.angle < 0.4) break; // ~23 degrees minimum
+    if (a.angle < 0.3) break; // ~17 degrees minimum (more sensitive)
     const p = points[a.idx];
-    const tooClose = corners.some(c => Math.sqrt((c.x - p.x) ** 2 + (c.y - p.y) ** 2) < totalLen * 0.08);
+    const tooClose = corners.some(c => Math.sqrt((c.x - p.x) ** 2 + (c.y - p.y) ** 2) < totalLen * 0.06);
     if (!tooClose) {
       corners.push(p);
-      if (corners.length >= 6) break;
+      if (corners.length >= 8) break;
     }
   }
   return corners;
@@ -1494,6 +1608,15 @@ const convertToCleanShape = (stroke: Stroke, shape: RecognizedShape): Stroke | n
           { x: shape.x2, y: shape.y2, pressure },
         ],
       };
+    case 'square':
+      return {
+        ...stroke,
+        tool: 'rect',
+        points: [
+          { x: shape.x, y: shape.y, pressure },
+          { x: shape.x + shape.size, y: shape.y + shape.size, pressure },
+        ],
+      };
     case 'rect':
       return {
         ...stroke,
@@ -1513,7 +1636,6 @@ const convertToCleanShape = (stroke: Stroke, shape: RecognizedShape): Stroke | n
         ],
       };
     case 'triangle': {
-      // Use bounding box approach: top-center to bottom corners
       const minX = Math.min(shape.x1, shape.x2, shape.x3);
       const maxX = Math.max(shape.x1, shape.x2, shape.x3);
       const minY = Math.min(shape.y1, shape.y2, shape.y3);
@@ -1527,7 +1649,7 @@ const convertToCleanShape = (stroke: Stroke, shape: RecognizedShape): Stroke | n
         ],
       };
     }
-    case 'star': {
+    case 'star':
       return {
         ...stroke,
         tool: 'star',
@@ -1536,7 +1658,60 @@ const convertToCleanShape = (stroke: Stroke, shape: RecognizedShape): Stroke | n
           { x: shape.cx + shape.r, y: shape.cy + shape.r, pressure },
         ],
       };
-    }
+    case 'diamond':
+      return {
+        ...stroke,
+        tool: 'diamond',
+        points: [
+          { x: shape.cx - shape.rx, y: shape.cy - shape.ry, pressure },
+          { x: shape.cx + shape.rx, y: shape.cy + shape.ry, pressure },
+        ],
+      };
+    case 'pentagon':
+      return {
+        ...stroke,
+        tool: 'pentagon',
+        points: [
+          { x: shape.cx - shape.r, y: shape.cy - shape.r, pressure },
+          { x: shape.cx + shape.r, y: shape.cy + shape.r, pressure },
+        ],
+      };
+    case 'polygon':
+      return {
+        ...stroke,
+        tool: 'polygon',
+        points: [
+          { x: shape.cx - shape.r, y: shape.cy - shape.r, pressure },
+          { x: shape.cx + shape.r, y: shape.cy + shape.r, pressure },
+        ],
+      };
+    case 'heart':
+      return {
+        ...stroke,
+        tool: 'heart',
+        points: [
+          { x: shape.cx - shape.rx, y: shape.cy - shape.ry, pressure },
+          { x: shape.cx + shape.rx, y: shape.cy + shape.ry, pressure },
+        ],
+      };
+    case 'arrow':
+      return {
+        ...stroke,
+        tool: 'arrow',
+        points: [
+          { x: shape.x1, y: shape.y1, pressure },
+          { x: shape.x2, y: shape.y2, pressure },
+        ],
+      };
+    case 'trapezoid':
+      return {
+        ...stroke,
+        tool: 'trapezoid',
+        points: [
+          { x: shape.cx - shape.rx, y: shape.cy - shape.ry, pressure },
+          { x: shape.cx + shape.rx, y: shape.cy + shape.ry, pressure },
+        ],
+      };
   }
 };
 
