@@ -2760,6 +2760,14 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
   }, [color, strokeWidth, tool, activeLayerId, redrawAll, eyedropperActive, applyColor, toolOpacity, selectedIndices, selectionRotation, clearSelection, fillEnabled, fillColor, fillOpacity, fillType, fillColor2, fillAngle, snapEnabled, background, pressureOpacityEnabled, highlightOpacity, presentationMode, isAudioSyncPlaying, washiPatternId]);
 
   const onPointerMove = useCallback((e: PointerEvent) => {
+    // Update eraser cursor position
+    if (tool === 'eraser') {
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (rect) {
+        eraserCursorRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+        setEraserCursorPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+      }
+    }
     // Infinite canvas: panning in progress
     if (isPanningRef.current && panStartRef.current) {
       const dx = e.clientX - panStartRef.current.x;
