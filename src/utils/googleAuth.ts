@@ -276,18 +276,20 @@ export const refreshGoogleToken = (): Promise<GoogleUser> =>
 export const getValidAccessToken = async (): Promise<string | null> => {
   const user = await getStoredGoogleUser();
   if (!user) return null;
-  
-  // If token is still valid, return it directly
+
+  // Native (Capacitor): keep stable session and avoid frequent interactive prompts.
+  // Real validity is enforced by Google API; 401 handling triggers retry logic.
+  if (isNative()) return user.accessToken;
+
+  // Web: use expiry + silent refresh
   if (isTokenValid(user)) return user.accessToken;
-  
-  // Token expired — try to refresh
+
   try {
-    const refreshed = isNative() ? await nativeRefresh() : await silentWebRefresh();
+    const refreshed = await silentWebRefresh();
     if (refreshed) return refreshed.accessToken;
   } catch {
-    // Refresh failed, fall through
+    // fall through
   }
-  
-  // Return existing token as last resort — caller should handle 401
+
   return user.accessToken;
 };
