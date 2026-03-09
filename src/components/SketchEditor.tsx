@@ -7366,6 +7366,93 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
         {eyedropperActive && (
           <div className="absolute top-2 left-2 bg-primary text-primary-foreground rounded-lg px-2 py-1 text-[10px] flex items-center gap-1">
             <Pipette className="h-3 w-3" />{t('sketch.tapToPickColor')}
+            {/* Fill color for selected strokes */}
+            {(() => {
+              const selStrokes = getSelectedStrokes();
+              if (selStrokes.length === 0) return null;
+              const currentFill = selStrokes[0]?.fillColor;
+              const currentFillOpacity = selStrokes[0]?.fillOpacity ?? 0.3;
+              return (
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 relative"
+                      title={t('sketch.fillColor')}
+                    >
+                      <Palette className="h-3.5 w-3.5" />
+                      {currentFill && (
+                        <span className="absolute bottom-0.5 right-0.5 w-2 h-2 rounded-full border border-border" style={{ backgroundColor: currentFill }} />
+                      )}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-3 bg-card" align="start" side="bottom">
+                    <p className="text-[10px] font-medium text-foreground mb-2">{t('sketch.fillColor')}</p>
+                    <div className="flex gap-1.5 flex-wrap mb-2">
+                      <button
+                        className={cn('w-6 h-6 rounded-full border-2 transition-transform active:scale-90 flex items-center justify-center',
+                          !currentFill ? 'border-primary scale-110' : 'border-border')}
+                        onClick={() => {
+                          const layer = layersRef.current.find(l => l.id === activeLayerId);
+                          if (!layer) return;
+                          undoStackRef.current = [...undoStackRef.current.slice(-(MAX_UNDO - 1)), cloneLayers(layersRef.current)];
+                          redoStackRef.current = [];
+                          for (const idx of selectedIndices) {
+                            const s = layer.strokes[idx];
+                            if (s) { delete s.fillColor; delete s.fillOpacity; }
+                          }
+                          redrawAll();
+                          emitChange();
+                          forceUpdate(n => n + 1);
+                        }}
+                        title={t('sketch.noFill')}
+                      >
+                        <X className="h-3 w-3 text-muted-foreground" />
+                      </button>
+                      {['#3b82f6','#ef4444','#22c55e','#f59e0b','#8b5cf6','#ec4899','#06b6d4','#f97316','#1a1a1a','#ffffff'].map(c => (
+                        <button key={c}
+                          className={cn('w-6 h-6 rounded-full border-2 transition-transform active:scale-90',
+                            currentFill === c ? 'border-primary scale-110' : 'border-border')}
+                          style={{ backgroundColor: c }}
+                          onClick={() => {
+                            const layer = layersRef.current.find(l => l.id === activeLayerId);
+                            if (!layer) return;
+                            undoStackRef.current = [...undoStackRef.current.slice(-(MAX_UNDO - 1)), cloneLayers(layersRef.current)];
+                            redoStackRef.current = [];
+                            for (const idx of selectedIndices) {
+                              const s = layer.strokes[idx];
+                              if (s) { s.fillColor = c; s.fillOpacity = s.fillOpacity ?? 0.3; }
+                            }
+                            redrawAll();
+                            emitChange();
+                            forceUpdate(n => n + 1);
+                          }}
+                        />
+                      ))}
+                    </div>
+                    {currentFill && (
+                      <div>
+                        <p className="text-[10px] text-muted-foreground mb-1">{t('sketch.fillOpacity')}: {Math.round(currentFillOpacity * 100)}%</p>
+                        <Slider min={5} max={100} step={5} value={[Math.round(currentFillOpacity * 100)]} onValueChange={([v]) => {
+                          const layer = layersRef.current.find(l => l.id === activeLayerId);
+                          if (!layer) return;
+                          undoStackRef.current = [...undoStackRef.current.slice(-(MAX_UNDO - 1)), cloneLayers(layersRef.current)];
+                          redoStackRef.current = [];
+                          for (const idx of selectedIndices) {
+                            const s = layer.strokes[idx];
+                            if (s) { s.fillOpacity = v / 100; }
+                          }
+                          redrawAll();
+                          emitChange();
+                          forceUpdate(n => n + 1);
+                        }} />
+                      </div>
+                    )}
+                  </PopoverContent>
+                </Popover>
+              );
+            })()}
           </div>
         )}
         {/* Selection floating actions */}
