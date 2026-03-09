@@ -6102,12 +6102,16 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
         // Shape recognition: convert freehand to clean shapes
         let strokeToAdd = finishedStroke;
         if (shapeRecognitionEnabled && !isShapeTool(finishedStroke.tool) && finishedStroke.tool !== 'eraser' && finishedStroke.tool !== 'washi') {
-          const recognized = recognizeShape(finishedStroke.points);
-          if (recognized) {
-            const cleanStroke = convertToCleanShape(finishedStroke, recognized);
+          const result = recognizeShape(finishedStroke.points);
+          if (result) {
+            const cleanStroke = convertToCleanShape(finishedStroke, result.shape);
             if (cleanStroke) {
               strokeToAdd = cleanStroke;
-              toast.success(`✨ ${t('sketch.shapeDetected', { shape: recognized.type.charAt(0).toUpperCase() + recognized.type.slice(1) })}`, { duration: 1500 });
+              const shapeName = result.shape.type.charAt(0).toUpperCase() + result.shape.type.slice(1);
+              // Show confidence badge on canvas
+              setShapeConfidenceBadge({ label: shapeName, confidence: result.confidence, x: finishedStroke.points[0].x, y: finishedStroke.points[0].y });
+              setTimeout(() => setShapeConfidenceBadge(null), 2500);
+              toast.success(`✨ ${t('sketch.shapeDetected', { shape: shapeName })} — ${result.confidence}%`, { duration: 2000 });
             }
           }
         }
