@@ -6794,6 +6794,33 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
                 </button>
               </div>
             )}
+
+            {/* Pressure Curve Editor */}
+            {DRAW_TOOLS.some(d => d.id === tool) && (
+              <div className="mt-2.5 pt-2.5 border-t border-border/30 space-y-2">
+                <p className="text-[10px] font-semibold text-foreground/80">Pressure Curve</p>
+                {/* Presets */}
+                <div className="flex gap-1 flex-wrap">
+                  {PRESSURE_CURVE_PRESETS.map(preset => {
+                    const isActive = pressureCurve[0] === preset.curve[0] && pressureCurve[1] === preset.curve[1] &&
+                      pressureCurve[2] === preset.curve[2] && pressureCurve[3] === preset.curve[3];
+                    return (
+                      <button key={preset.label}
+                        className={cn(
+                          'px-2 py-0.5 rounded text-[9px] font-medium transition-colors',
+                          isActive ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-accent'
+                        )}
+                        onClick={() => setPressureCurve([...preset.curve])}
+                      >
+                        {preset.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                {/* Interactive Bezier Canvas */}
+                <PressureCurveCanvas curve={pressureCurve} onChange={setPressureCurve} />
+              </div>
+            )}
           </PopoverContent>
         </Popover>
 
