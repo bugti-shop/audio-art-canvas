@@ -14,7 +14,7 @@ import {
   Type, Bold, Italic, Triangle, Star, Diamond, Hexagon, Navigation,
   Droplets, CircleDot, PaintbrushVertical, PenLine, StickyNote, ImagePlus, Sparkles,
   Heart, Cloud, MessageSquare, Pentagon, Moon, Cylinder,
-  Mic, Square as StopSquare, Wand2, ChevronLeft, ChevronRight, FileUp, Video, Repeat,
+  Mic, Square as StopSquare, ChevronLeft, ChevronRight, FileUp, Video, Repeat,
   Search, X, Hand, ZoomOut, Shrink,
 } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
