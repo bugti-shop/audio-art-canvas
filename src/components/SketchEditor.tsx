@@ -1064,6 +1064,7 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
 
   const [tool, setTool] = useState<ToolType>('pen');
   const [color, setColor] = useState('#1a1a1a');
+  const [strokeSmoothing, setStrokeSmoothing] = useState(2); // 0=off, 1-4 iterations
   const [highlightOpacity, setHighlightOpacity] = useState(0.35);
   const [strokeWidth, setStrokeWidth] = useState(3);
   const [toolOpacity, setToolOpacity] = useState(1);
