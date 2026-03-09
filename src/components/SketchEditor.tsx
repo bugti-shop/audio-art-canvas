@@ -1143,7 +1143,102 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
   } | null>(null);
   const clipboardRef = useRef<Stroke[]>([]);
 
-  // Text tool state
+  // Smart alignment guides
+  const SNAP_THRESHOLD = 6; // pixels in world coords (adjusted by zoom)
+  const alignmentGuidesRef = useRef<{ type: 'h' | 'v'; pos: number; from: number; to: number }[]>([]);
+
+  /** Collect alignment edges (left, right, top, bottom, centerX, centerY) from all shapes on the active layer, excluding specified indices */
+  const collectAlignmentEdges = useCallback((excludeIndices: Set<number>) => {
+    const layer = layersRef.current.find(l => l.id === activeLayerId);
+    if (!layer) return { xs: [] as number[], ys: [] as number[] };
+    const xs: number[] = [];
+    const ys: number[] = [];
+    layer.strokes.forEach((stroke, i) => {
+      if (excludeIndices.has(i) || stroke.tool === 'eraser') return;
+      const bb = getStrokeBBox(stroke);
+      xs.push(bb.x, bb.x + bb.w, bb.x + bb.w / 2);
+      ys.push(bb.y, bb.y + bb.h, bb.y + bb.h / 2);
+    });
+    // Also collect from sticky notes, images
+    for (const sn of (layer.stickyNotes || [])) {
+      xs.push(sn.x, sn.x + sn.width, sn.x + sn.width / 2);
+      ys.push(sn.y, sn.y + sn.height, sn.y + sn.height / 2);
+    }
+    for (const img of (layer.images || [])) {
+      xs.push(img.x, img.x + img.width, img.x + img.width / 2);
+      ys.push(img.y, img.y + img.height, img.y + img.height / 2);
+    }
+    return { xs, ys };
+  }, [activeLayerId]);
+
+  /** Find snap targets and build guide lines. Returns snapped position delta. */
+  const computeAlignmentSnap = useCallback((
+    bbox: BBox,
+    edges: { xs: number[]; ys: number[] },
+    viewBounds: { vx0: number; vy0: number; vx1: number; vy1: number },
+  ): { dx: number; dy: number } => {
+    const threshold = SNAP_THRESHOLD / zoomRef.current;
+    const guides: { type: 'h' | 'v'; pos: number; from: number; to: number }[] = [];
+    let dx = 0, dy = 0;
+    let bestDistX = threshold, bestDistY = threshold;
+
+    // Our candidate edges: left, center, right
+    const myXs = [bbox.x, bbox.x + bbox.w / 2, bbox.x + bbox.w];
+    const myYs = [bbox.y, bbox.y + bbox.h / 2, bbox.y + bbox.h];
+
+    for (const mx of myXs) {
+      for (const ex of edges.xs) {
+        const dist = Math.abs(mx - ex);
+        if (dist < bestDistX) {
+          bestDistX = dist;
+          dx = ex - mx;
+        }
+      }
+    }
+    for (const my of myYs) {
+      for (const ey of edges.ys) {
+        const dist = Math.abs(my - ey);
+        if (dist < bestDistY) {
+          bestDistY = dist;
+          dy = ey - my;
+        }
+      }
+    }
+
+    // Build visible guide lines for matched edges
+    if (bestDistX < threshold) {
+      const snapX = myXs.find(mx => Math.abs(mx + dx) < 0.01 + Math.abs(dx === 0 ? 0 : mx + dx - edges.xs.find(ex => Math.abs(ex - mx - dx) < 0.5)!)) ?? myXs[0] + dx;
+      // Find the exact x that snapped
+      for (const mx of myXs) {
+        for (const ex of edges.xs) {
+          if (Math.abs(mx + dx - ex) < 0.5) {
+            guides.push({ type: 'v', pos: ex, from: viewBounds.vy0, to: viewBounds.vy1 });
+          }
+        }
+      }
+    }
+    if (bestDistY < threshold) {
+      for (const my of myYs) {
+        for (const ey of edges.ys) {
+          if (Math.abs(my + dy - ey) < 0.5) {
+            guides.push({ type: 'h', pos: ey, from: viewBounds.vx0, to: viewBounds.vx1 });
+          }
+        }
+      }
+    }
+
+    // Deduplicate guides
+    const seen = new Set<string>();
+    alignmentGuidesRef.current = guides.filter(g => {
+      const key = `${g.type}-${g.pos.toFixed(1)}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    return { dx: bestDistX < threshold ? dx : 0, dy: bestDistY < threshold ? dy : 0 };
+  }, []);
+
   const [textFont, setTextFont] = useState('sans-serif');
   const [textFontSize, setTextFontSize] = useState(24);
   const [textBold, setTextBold] = useState(false);
