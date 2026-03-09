@@ -1700,7 +1700,7 @@ const getRectangleFit = (corners: Point[], minX: number, minY: number, maxX: num
   return totalErr / diag;
 };
 
-const convertToCleanShape = (stroke: Stroke, shape: RecognizedShape): Stroke | null => {
+const convertToCleanShape = (stroke: Stroke, shape: RecognizedShapeData | null): Stroke | null => {
   if (!shape) return null;
   const pressure = 0.5;
   switch (shape.type) {
