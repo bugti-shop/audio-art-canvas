@@ -86,16 +86,44 @@ const nativeSignOut = async () => {
 };
 
 const nativeRefresh = async (): Promise<GoogleUser> => {
-  // Capgo doesn't expose silent refresh — just extend the stored user's expiry
-  // to avoid re-triggering the sign-in UI automatically
-  const stored = await getStoredGoogleUser();
-  if (stored) {
-    const extended: GoogleUser = { ...stored, expiresAt: Date.now() + 365 * 24 * 3600 * 1000 };
-    await setSetting('googleUser', extended);
-    return extended;
+  // Re-login silently to get a fresh access token from Google
+  try {
+    await ensureNativeInit();
+    const { SocialLogin } = await import('@capgo/capacitor-social-login');
+
+    const result = await SocialLogin.login({
+      provider: 'google',
+      options: { scopes: NATIVE_SCOPES },
+    });
+
+    const r = result.result as any;
+    const accessToken: string = r.accessToken?.token || r.accessToken || '';
+
+    if (!accessToken) {
+      // Fallback: return stored user if re-login didn't yield a token
+      const stored = await getStoredGoogleUser();
+      if (stored) return stored;
+      throw new Error('No access token from refresh');
+    }
+
+    // Keep existing profile info, just update the token
+    const stored = await getStoredGoogleUser();
+    const user: GoogleUser = {
+      email: stored?.email || r.profile?.email || r.email || '',
+      name: stored?.name || r.profile?.name || r.name || '',
+      picture: stored?.picture || r.profile?.imageUrl || r.profile?.picture || '',
+      accessToken,
+      expiresAt: Date.now() + 3500 * 1000, // ~1 hour (Google token lifetime)
+    };
+
+    await setSetting('googleUser', user);
+    return user;
+  } catch (err) {
+    console.warn('Native token refresh failed, falling back to stored user:', err);
+    const stored = await getStoredGoogleUser();
+    if (stored) return stored;
+    throw err;
   }
-  // No stored user, must sign in fresh
-  return nativeSignIn();
 };
 
 // ── Web (Google Identity Services) ────────────────────────────────────────
