@@ -181,17 +181,6 @@ const BUILT_IN_STICKERS: StickerElement[] = [
   },
 ];
 
-// --- Washi tape data interface re-export for component use ---
-interface WashiTapeData {
-  id: number;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  rotation: number;
-  patternId: string;
-  opacity: number;
-}
 
 const TEXT_FONTS = [
   { id: 'sans-serif', label: 'Sans Serif' },
