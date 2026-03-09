@@ -1408,9 +1408,9 @@ const recognizeShape = (points: Point[]): RecognizedShape => {
   if (numCorners >= 4 && numCorners <= 6) {
     const top4 = corners.slice(0, 4);
     const rectErr = getRectangleFit(top4, minX, minY, maxX, maxY);
-    if (rectErr < 0.3) {
+    if (rectErr < 0.24 && circularity < 0.88) {
       const aspectRatio = bw / bh;
-      if (aspectRatio > 0.8 && aspectRatio < 1.2) {
+      if (aspectRatio > 0.85 && aspectRatio < 1.15) {
         const size = Math.max(bw, bh);
         return { type: 'square', x: cx - size / 2, y: cy - size / 2, size };
       }
