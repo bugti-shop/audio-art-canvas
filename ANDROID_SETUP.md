@@ -326,22 +326,7 @@ public class DynamicIconPlugin extends Plugin {
 }
 ```
 
-### Step 4: Register Plugin in MainActivity
-
-Add this to `MainActivity.java`:
-
-```java
-import nota.npd.com.DynamicIconPlugin;
-
-// Inside onCreate or at class level:
-@Override
-public void onCreate(Bundle savedInstanceState) {
-    super.onCreate(savedInstanceState);
-    registerPlugin(DynamicIconPlugin.class);
-}
-```
-
-### Step 5: JS Integration
+### Step 4: JS Integration
 
 The web-side code is in `src/utils/dynamicIcon.ts` — it calls the native plugin and falls back gracefully on web.
 
