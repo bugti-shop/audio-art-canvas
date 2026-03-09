@@ -212,11 +212,10 @@ const isUnlocked = (progress: UserProgress, cert: CertificateLevel): boolean => 
 
 export const hasNewCertificates = async (longestStreak: number): Promise<boolean> => {
   try {
-    const [tasks, notes, folders, adminBypass, seenCerts] = await Promise.all([
+    const [tasks, notes, folders, seenCerts] = await Promise.all([
       loadTodoItems(),
       loadNotesFromDB(),
       loadFolders(),
-      getSettingForAdmin<boolean>('npd_admin_bypass', false),
       getSetting<string[]>('npd_seen_certificates', []),
     ]);
     const completedTasks = tasks.filter(t => t.completed).length;
@@ -229,7 +228,6 @@ export const hasNewCertificates = async (longestStreak: number): Promise<boolean
       longestStreak,
       notesCreated: notes.length,
       foldersUsed: usedFolderIds.size,
-      isAdmin: !!adminBypass,
     };
     return CERTIFICATE_LEVELS.some(
       cert => isUnlocked(progress, cert) && !seenCerts.includes(cert.id)
