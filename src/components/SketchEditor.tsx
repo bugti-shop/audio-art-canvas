@@ -1284,6 +1284,12 @@ type RecognizedShape =
   | { type: 'heart'; cx: number; cy: number; rx: number; ry: number }
   | { type: 'arrow'; x1: number; y1: number; x2: number; y2: number }
   | { type: 'trapezoid'; cx: number; cy: number; rx: number; ry: number }
+  | { type: 'moon'; cx: number; cy: number; r: number }
+  | { type: 'cloud'; cx: number; cy: number; rx: number; ry: number }
+  | { type: 'speechBubble'; x: number; y: number; w: number; h: number }
+  | { type: 'cylinder'; x: number; y: number; w: number; h: number }
+  | { type: 'cone'; cx: number; cy: number; rx: number; ry: number }
+  | { type: 'cross'; cx: number; cy: number; rx: number; ry: number }
   | null;
 
 const recognizeShape = (points: Point[]): RecognizedShape => {
