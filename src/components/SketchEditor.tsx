@@ -1588,7 +1588,7 @@ const recognizeShape = (points: Point[]): RecognizedShape => {
     if (topBand.length > 1 && bottomBand.length > 3) {
       const topXSpread = Math.max(...topBand.map(p => p.x)) - Math.min(...topBand.map(p => p.x));
       const bottomXSpread = Math.max(...bottomBand.map(p => p.x)) - Math.min(...bottomBand.map(p => p.x));
-      if (topXSpread < bw * 0.35 && bottomXSpread > bw * 0.5) {
+      if (topXSpread < bw * 0.28 && bottomXSpread > bw * 0.6 && numCorners <= 5) {
         return { type: 'cone', cx, cy, rx, ry };
       }
     }
