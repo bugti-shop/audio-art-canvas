@@ -7699,6 +7699,27 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
             <Pipette className="h-3 w-3" />{t('sketch.tapToPickColor')}
           </div>
         )}
+        {/* Shape confidence badge */}
+        {shapeConfidenceBadge && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.8, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.7 }}
+            className="absolute top-12 left-1/2 -translate-x-1/2 z-30 pointer-events-none"
+          >
+            <div className={cn(
+              'flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-semibold shadow-lg border backdrop-blur-md',
+              shapeConfidenceBadge.confidence >= 85
+                ? 'bg-green-500/20 border-green-500/40 text-green-700 dark:text-green-300'
+                : shapeConfidenceBadge.confidence >= 65
+                ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-700 dark:text-yellow-300'
+                : 'bg-red-500/20 border-red-500/40 text-red-700 dark:text-red-300'
+            )}>
+              <Wand2 className="h-3 w-3" />
+              <span>{shapeConfidenceBadge.label}</span>
+              <span className="font-bold">{shapeConfidenceBadge.confidence}%</span>
+            </div>
+          </motion.div>
         {/* Selection floating actions */}
         {hasSelection && tool === 'select' && (
           <div className="absolute top-2 left-2 bg-card/95 backdrop-blur-sm border border-border rounded-lg px-1 py-1 flex items-center gap-0.5">
