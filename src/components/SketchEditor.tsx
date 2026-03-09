@@ -7263,22 +7263,6 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
           </PopoverContent>
         </Popover>
 
-        {/* Shape Recognition toggle */}
-        <button
-          className={cn(
-            'h-10 w-10 flex-shrink-0 rounded-xl flex items-center justify-center transition-all duration-200',
-            shapeRecognitionEnabled
-              ? 'bg-primary/15 text-primary scale-105 ring-2 ring-primary/20'
-              : 'text-foreground/70 hover:bg-muted/80 hover:text-foreground active:scale-95'
-          )}
-          onClick={() => {
-            setShapeRecognitionEnabled(!shapeRecognitionEnabled);
-            toast.success(shapeRecognitionEnabled ? t('sketch.shapeRecognitionOff', 'Shape recognition off') : t('sketch.shapeRecognitionOn', 'Shape recognition on ✨'), { duration: 1500 });
-          }}
-          title={shapeRecognitionEnabled ? t('sketch.shapeRecognitionOff', 'Shape recognition off') : t('sketch.shapeRecognitionOn', 'Shape recognition on')}
-        >
-          <Wand2 className="h-5 w-5" strokeWidth={shapeRecognitionEnabled ? 2.5 : 1.8} />
-        </button>
 
         {/* Symmetry mode toggle */}
         <Popover open={openToolbarPopover === 'symmetry'} onOpenChange={(o) => setOpenToolbarPopover(o ? 'symmetry' : null)}>
