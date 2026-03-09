@@ -1320,30 +1320,29 @@ const recognizeShape = (points: Point[]): ShapeRecognitionResult | null => {
   const totalLen = getTotalLength(points);
   if (totalLen < 20) return null;
 
-  // Check if the path is closed (first ~= last)
   const closeDist = Math.sqrt((first.x - last.x) ** 2 + (first.y - last.y) ** 2);
   const isClosed = closeDist < Math.max(18, totalLen * 0.16);
+  const closeScore = isClosed ? Math.max(0, 1 - closeDist / (totalLen * 0.16)) : 0;
 
-  // --- Arrow detection (line with a hook at the end) ---
+  // --- Arrow detection ---
   if (!isClosed) {
     const lineErr = getLineDeviation(points, first, last);
     const segLen = Math.sqrt((last.x - first.x) ** 2 + (last.y - first.y) ** 2);
-    // Check if the last ~15% of points deviate (arrowhead)
     const arrowStart = Math.floor(points.length * 0.85);
     const mainPoints = points.slice(0, arrowStart);
     const mainLineErr = mainPoints.length > 2 ? getLineDeviation(mainPoints, first, mainPoints[mainPoints.length - 1]) : 1;
     if (segLen > 20 && mainLineErr < 0.08 && lineErr > 0.06) {
-      return { type: 'arrow', x1: first.x, y1: first.y, x2: last.x, y2: last.y };
+      const conf = Math.round(Math.max(60, Math.min(98, (1 - mainLineErr / 0.08) * 40 + 60)));
+      return { shape: { type: 'arrow', x1: first.x, y1: first.y, x2: last.x, y2: last.y }, confidence: conf };
     }
-    // Straight line
     if (segLen > 20 && lineErr < 0.08) {
-      return { type: 'line', x1: first.x, y1: first.y, x2: last.x, y2: last.y };
+      const conf = Math.round(Math.max(70, Math.min(99, (1 - lineErr / 0.08) * 30 + 70)));
+      return { shape: { type: 'line', x1: first.x, y1: first.y, x2: last.x, y2: last.y }, confidence: conf };
     }
   }
 
   if (!isClosed) return null;
 
-  // Compute bounding box
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const p of points) {
     if (p.x < minX) minX = p.x;
@@ -1362,32 +1361,30 @@ const recognizeShape = (points: Point[]): ShapeRecognitionResult | null => {
   const area = getPolygonArea(points);
   const circularity = totalLen > 0 ? (4 * Math.PI * area) / (totalLen * totalLen) : 0;
 
-  // --- Corner detection ---
   const corners = detectCorners(points, totalLen);
   const numCorners = corners.length;
 
-  // --- Heart detection: indentation at the top center ---
+  // --- Heart ---
   const topPoints = points.filter(p => p.y < cy - ry * 0.3);
   if (topPoints.length > 3) {
     const topCenterPoints = topPoints.filter(p => Math.abs(p.x - cx) < rx * 0.4);
     if (topCenterPoints.length > 0) {
       const avgTopCenterY = topCenterPoints.reduce((s, p) => s + p.y, 0) / topCenterPoints.length;
-      const topEdgeY = minY;
-      const indentDepth = (avgTopCenterY - topEdgeY) / bh;
+      const indentDepth = (avgTopCenterY - minY) / bh;
       if (indentDepth > 0.08 && indentDepth < 0.4) {
-        // Check that bottom is pointed (narrower)
-        const bottomPoints = points.filter(p => p.y > cy + ry * 0.5);
-        if (bottomPoints.length > 0) {
-          const bottomWidth = Math.max(...bottomPoints.map(p => p.x)) - Math.min(...bottomPoints.map(p => p.x));
+        const bottomPts = points.filter(p => p.y > cy + ry * 0.5);
+        if (bottomPts.length > 0) {
+          const bottomWidth = Math.max(...bottomPts.map(p => p.x)) - Math.min(...bottomPts.map(p => p.x));
           if (bottomWidth < bw * 0.5) {
-            return { type: 'heart', cx, cy, rx, ry };
+            const conf = Math.round(70 + closeScore * 15 + (indentDepth > 0.15 ? 10 : 0));
+            return { shape: { type: 'heart', cx, cy, rx, ry }, confidence: Math.min(97, conf) };
           }
         }
       }
     }
   }
 
-  // --- Diamond: 4 corners near edge midpoints ---
+  // --- Diamond ---
   if (numCorners >= 4 && numCorners <= 5) {
     const top4 = corners.slice(0, 4);
     const diamondTargets = [
@@ -1397,8 +1394,7 @@ const recognizeShape = (points: Point[]): ShapeRecognitionResult | null => {
     let diamondErr = 0;
     const usedD = new Set<number>();
     for (const dt of diamondTargets) {
-      let bestDist = Infinity;
-      let bestIdx = -1;
+      let bestDist = Infinity, bestIdx = -1;
       for (let i = 0; i < top4.length; i++) {
         if (usedD.has(i)) continue;
         const d = Math.sqrt((top4[i].x - dt.x) ** 2 + (top4[i].y - dt.y) ** 2);
@@ -1409,28 +1405,29 @@ const recognizeShape = (points: Point[]): ShapeRecognitionResult | null => {
     }
     const normDiamondErr = diamondErr / diag;
     if (normDiamondErr < 0.35) {
-      return { type: 'diamond', cx, cy, rx, ry };
+      const conf = Math.round(Math.max(65, Math.min(97, (1 - normDiamondErr / 0.35) * 35 + 65)));
+      return { shape: { type: 'diamond', cx, cy, rx, ry }, confidence: conf };
     }
   }
 
-  // --- Square/Rectangle: 4 corners near bbox corners ---
+  // --- Square/Rectangle ---
   if (numCorners >= 4 && numCorners <= 6) {
     const top4 = corners.slice(0, 4);
     const rectErr = getRectangleFit(top4, minX, minY, maxX, maxY);
     if (rectErr < 0.24 && circularity < 0.88) {
+      const conf = Math.round(Math.max(70, Math.min(98, (1 - rectErr / 0.24) * 30 + 70)));
       const aspectRatio = bw / bh;
       if (aspectRatio > 0.85 && aspectRatio < 1.15) {
         const size = Math.max(bw, bh);
-        return { type: 'square', x: cx - size / 2, y: cy - size / 2, size };
+        return { shape: { type: 'square', x: cx - size / 2, y: cy - size / 2, size }, confidence: conf };
       }
-      return { type: 'rect', x: minX, y: minY, w: bw, h: bh };
+      return { shape: { type: 'rect', x: minX, y: minY, w: bw, h: bh }, confidence: conf };
     }
   }
 
-  // --- Trapezoid: 4 corners where top edge is shorter than bottom ---
+  // --- Trapezoid ---
   if (numCorners >= 4 && numCorners <= 5) {
     const top4 = corners.slice(0, 4);
-    // Sort by Y to find top and bottom pairs
     const sorted = [...top4].sort((a, b) => a.y - b.y);
     const topPair = sorted.slice(0, 2).sort((a, b) => a.x - b.x);
     const bottomPair = sorted.slice(2, 4).sort((a, b) => a.x - b.x);
@@ -1438,11 +1435,12 @@ const recognizeShape = (points: Point[]): ShapeRecognitionResult | null => {
     const bottomWidth = Math.abs(bottomPair[1].x - bottomPair[0].x);
     const ratio = topWidth / bottomWidth;
     if (ratio > 0.3 && ratio < 0.85 && topWidth > bw * 0.2) {
-      return { type: 'trapezoid', cx, cy, rx, ry };
+      const conf = Math.round(68 + closeScore * 15 + (1 - ratio) * 10);
+      return { shape: { type: 'trapezoid', cx, cy, rx, ry }, confidence: Math.min(95, conf) };
     }
   }
 
-  // --- Triangle: 3 corners ---
+  // --- Triangle ---
   if (numCorners >= 3 && numCorners <= 4) {
     const top3 = corners.slice(0, 3);
     const triArea = Math.abs(
@@ -1451,26 +1449,26 @@ const recognizeShape = (points: Point[]): ShapeRecognitionResult | null => {
     ) / 2;
     const bboxArea = bw * bh;
     if (triArea > bboxArea * 0.2 && triArea < bboxArea * 0.72 && circularity < 0.75) {
-      return {
+      const areaRatio = triArea / (bboxArea * 0.5);
+      const conf = Math.round(Math.max(65, Math.min(96, 65 + areaRatio * 20 + closeScore * 10)));
+      return { shape: {
         type: 'triangle',
         x1: top3[0].x, y1: top3[0].y,
         x2: top3[1].x, y2: top3[1].y,
         x3: top3[2].x, y3: top3[2].y,
-      };
+      }, confidence: conf };
     }
   }
 
-  // --- Pentagon: 5 corners roughly evenly spaced ---
+  // --- Pentagon ---
   if (numCorners >= 5 && numCorners <= 6) {
     const top5 = corners.slice(0, 5);
     const withAngles = top5.map(c => ({ ...c, angle: Math.atan2(c.y - cy, c.x - cx) }));
     withAngles.sort((a, b) => a.angle - b.angle);
     const dists = withAngles.map(c => Math.sqrt((c.x - cx) ** 2 + (c.y - cy) ** 2));
     const avgDist = dists.reduce((a, b) => a + b, 0) / dists.length;
-    // Check roughly equal distances from center (no alternating = not star)
     const distDeviation = dists.reduce((sum, d) => sum + Math.abs(d - avgDist), 0) / dists.length / avgDist;
     
-    // Check alternating for star detection
     const sortedDists = dists;
     let alternating = 0;
     for (let i = 1; i < sortedDists.length; i++) {
@@ -1479,28 +1477,26 @@ const recognizeShape = (points: Point[]): ShapeRecognitionResult | null => {
       if (prev !== curr) alternating++;
     }
     
-    // Star: alternating inner/outer pattern
     if (alternating >= 3 && distDeviation > 0.15) {
       const maxR = Math.max(...dists);
-      return { type: 'star', cx, cy, r: maxR };
+      const conf = Math.round(Math.max(62, Math.min(94, 62 + (distDeviation - 0.15) * 80 + closeScore * 10)));
+      return { shape: { type: 'star', cx, cy, r: maxR }, confidence: conf };
     }
     
-    // Pentagon: roughly equal distances
     if (distDeviation < 0.25) {
       const angleDiffs: number[] = [];
-      for (let i = 1; i < withAngles.length; i++) {
-        angleDiffs.push(withAngles[i].angle - withAngles[i - 1].angle);
-      }
+      for (let i = 1; i < withAngles.length; i++) angleDiffs.push(withAngles[i].angle - withAngles[i - 1].angle);
       angleDiffs.push(2 * Math.PI + withAngles[0].angle - withAngles[withAngles.length - 1].angle);
       const avgAngleDiff = (2 * Math.PI) / 5;
       const angleDeviation = angleDiffs.reduce((sum, d) => sum + Math.abs(d - avgAngleDiff), 0) / angleDiffs.length;
       if (angleDeviation < 0.6) {
-        return { type: 'pentagon', cx, cy, r: avgDist };
+        const conf = Math.round(Math.max(60, Math.min(93, 60 + (1 - angleDeviation / 0.6) * 25 + closeScore * 8)));
+        return { shape: { type: 'pentagon', cx, cy, r: avgDist }, confidence: conf };
       }
     }
   }
 
-  // --- Hexagon: 6 corners roughly evenly spaced ---
+  // --- Hexagon ---
   if (numCorners >= 6 && numCorners <= 8) {
     const top6 = corners.slice(0, 6);
     const withAngles = top6.map(c => ({ ...c, angle: Math.atan2(c.y - cy, c.x - cx) }));
@@ -1510,48 +1506,41 @@ const recognizeShape = (points: Point[]): ShapeRecognitionResult | null => {
     const distDeviation = dists.reduce((sum, d) => sum + Math.abs(d - avgDist), 0) / dists.length / avgDist;
     if (distDeviation < 0.3) {
       const angleDiffs: number[] = [];
-      for (let i = 1; i < withAngles.length; i++) {
-        angleDiffs.push(withAngles[i].angle - withAngles[i - 1].angle);
-      }
+      for (let i = 1; i < withAngles.length; i++) angleDiffs.push(withAngles[i].angle - withAngles[i - 1].angle);
       angleDiffs.push(2 * Math.PI + withAngles[0].angle - withAngles[withAngles.length - 1].angle);
       const avgAngleDiff = (2 * Math.PI) / 6;
       const angleDeviation = angleDiffs.reduce((sum, d) => sum + Math.abs(d - avgAngleDiff), 0) / angleDiffs.length;
       if (angleDeviation < 0.6) {
-        return { type: 'polygon', cx, cy, r: avgDist };
+        const conf = Math.round(Math.max(60, Math.min(93, 60 + (1 - angleDeviation / 0.6) * 25 + closeScore * 8)));
+        return { shape: { type: 'polygon', cx, cy, r: avgDist }, confidence: conf };
       }
     }
   }
 
-  // --- Moon detection: crescent shape (asymmetric, one side flatter) ---
-  // Approximate: if shape is roughly circular but points cluster away from one side
+  // --- Moon ---
   {
     let circleErrCheck = 0;
     for (const p of points) {
-      const nx = (p.x - cx) / rx;
-      const ny = (p.y - cy) / ry;
-      const d = Math.sqrt(nx * nx + ny * ny);
-      circleErrCheck += (d - 1) ** 2;
+      const nx = (p.x - cx) / rx, ny = (p.y - cy) / ry;
+      circleErrCheck += (Math.sqrt(nx * nx + ny * ny) - 1) ** 2;
     }
     circleErrCheck = Math.sqrt(circleErrCheck / points.length);
-    // Moon: roughly circular but with a concave bite on one side
     if (circleErrCheck < 0.3 && circleErrCheck > 0.14 && circularity > 0.45 && circularity < 0.82) {
-      // Check for asymmetric density (one half has fewer points)
-      const leftPoints = points.filter(p => p.x < cx).length;
-      const rightPoints = points.filter(p => p.x >= cx).length;
-      const ratio = Math.min(leftPoints, rightPoints) / Math.max(leftPoints, rightPoints);
+      const leftPts = points.filter(p => p.x < cx).length;
+      const rightPts = points.filter(p => p.x >= cx).length;
+      const ratio = Math.min(leftPts, rightPts) / Math.max(leftPts, rightPts);
       if (ratio < 0.5) {
-        const r = Math.max(rx, ry);
-        return { type: 'moon', cx, cy, r };
+        const conf = Math.round(60 + (0.5 - ratio) * 40 + closeScore * 10);
+        return { shape: { type: 'moon', cx, cy, r: Math.max(rx, ry) }, confidence: Math.min(90, conf) };
       }
     }
   }
 
-  // --- Cloud detection: bumpy top, flatter bottom ---
+  // --- Cloud ---
   {
     const topHalf = points.filter(p => p.y < cy);
     const bottomHalf = points.filter(p => p.y >= cy);
     if (topHalf.length > 5 && bottomHalf.length > 5) {
-      // Count direction changes in the top half (bumpiness)
       const topSorted = [...topHalf].sort((a, b) => a.x - b.x);
       let dirChanges = 0;
       for (let i = 2; i < topSorted.length; i++) {
@@ -1560,37 +1549,33 @@ const recognizeShape = (points: Point[]): ShapeRecognitionResult | null => {
         if ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) dirChanges++;
       }
       const bumpiness = dirChanges / topSorted.length;
-      // Bottom should be relatively flat
-      const bottomYs = bottomHalf.map(p => p.y);
-      const bottomRange = Math.max(...bottomYs) - Math.min(...bottomYs);
+      const bottomRange = Math.max(...bottomHalf.map(p => p.y)) - Math.min(...bottomHalf.map(p => p.y));
       const bottomFlatness = bottomRange / bh;
       if (bumpiness > 0.12 && bumpiness < 0.45 && bottomFlatness < 0.34 && bw > bh * 1.05 && numCorners >= 6) {
-        return { type: 'cloud', cx, cy, rx, ry };
+        const conf = Math.round(60 + bumpiness * 60 + closeScore * 10);
+        return { shape: { type: 'cloud', cx, cy, rx, ry }, confidence: Math.min(92, conf) };
       }
     }
   }
 
-  // --- Cylinder: tall rectangle-ish with curved top/bottom ---
+  // --- Cylinder ---
   if (bh > bw * 1.2) {
-    // Check if top and bottom are curved (elliptical)
     const topBand = points.filter(p => p.y < minY + bh * 0.2);
     const bottomBand = points.filter(p => p.y > maxY - bh * 0.2);
     if (topBand.length > 3 && bottomBand.length > 3) {
       const topXSpread = Math.max(...topBand.map(p => p.x)) - Math.min(...topBand.map(p => p.x));
       const bottomXSpread = Math.max(...bottomBand.map(p => p.x)) - Math.min(...bottomBand.map(p => p.x));
-      // Both top and bottom should span most of the width
       if (topXSpread > bw * 0.65 && bottomXSpread > bw * 0.65 && Math.abs(topXSpread - bottomXSpread) < bw * 0.22) {
-        // Check for vertical sides
         const leftSide = points.filter(p => p.x < minX + bw * 0.15);
         const rightSide = points.filter(p => p.x > maxX - bw * 0.15);
         if (leftSide.length > 3 && rightSide.length > 3 && numCorners <= 5) {
-          return { type: 'cylinder', x: minX, y: minY, w: bw, h: bh };
+          return { shape: { type: 'cylinder', x: minX, y: minY, w: bw, h: bh }, confidence: Math.round(72 + closeScore * 15) };
         }
       }
     }
   }
 
-  // --- Cone: V-shape with wider bottom ---
+  // --- Cone ---
   if (bh > bw * 0.6) {
     const topBand = points.filter(p => p.y < minY + bh * 0.2);
     const bottomBand = points.filter(p => p.y > maxY - bh * 0.25);
@@ -1598,33 +1583,33 @@ const recognizeShape = (points: Point[]): ShapeRecognitionResult | null => {
       const topXSpread = Math.max(...topBand.map(p => p.x)) - Math.min(...topBand.map(p => p.x));
       const bottomXSpread = Math.max(...bottomBand.map(p => p.x)) - Math.min(...bottomBand.map(p => p.x));
       if (topXSpread < bw * 0.28 && bottomXSpread > bw * 0.6 && numCorners <= 5) {
-        return { type: 'cone', cx, cy, rx, ry };
+        return { shape: { type: 'cone', cx, cy, rx, ry }, confidence: Math.round(70 + closeScore * 15) };
       }
     }
   }
 
-  // --- Cross / Plus detection: horizontal + vertical bar overlap ---
+  // --- Cross ---
   {
     const hBand = points.filter(p => Math.abs(p.y - cy) < ry * 0.35);
     const vBand = points.filter(p => Math.abs(p.x - cx) < rx * 0.35);
     const hRatio = hBand.length / points.length;
     const vRatio = vBand.length / points.length;
     if (numCorners >= 8 && hRatio > 0.33 && vRatio > 0.33 && hRatio + vRatio > 0.8) {
-      return { type: 'cross', cx, cy, rx, ry };
+      const conf = Math.round(65 + (hRatio + vRatio - 0.7) * 50 + closeScore * 8);
+      return { shape: { type: 'cross', cx, cy, rx, ry }, confidence: Math.min(95, conf) };
     }
   }
 
-  // --- Circle/Ellipse detection (fallback) ---
+  // --- Circle/Ellipse ---
   let circleErr = 0;
   for (const p of points) {
-    const nx = (p.x - cx) / rx;
-    const ny = (p.y - cy) / ry;
-    const d = Math.sqrt(nx * nx + ny * ny);
-    circleErr += (d - 1) ** 2;
+    const nx = (p.x - cx) / rx, ny = (p.y - cy) / ry;
+    circleErr += (Math.sqrt(nx * nx + ny * ny) - 1) ** 2;
   }
   circleErr = Math.sqrt(circleErr / points.length);
   if (circleErr < 0.19 && circularity > 0.72) {
-    return { type: 'circle', cx, cy, rx, ry };
+    const conf = Math.round(Math.max(75, Math.min(99, (1 - circleErr / 0.19) * 25 + 75)));
+    return { shape: { type: 'circle', cx, cy, rx, ry }, confidence: conf };
   }
 
   return null;
