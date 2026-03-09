@@ -921,7 +921,131 @@ const PenPreviewCanvas = memo(({ penType, isActive, currentColor }: { penType: D
 });
 PenPreviewCanvas.displayName = 'PenPreviewCanvas';
 
-export const SketchEditor = memo(({ initialData, onChange, onImageExport, className }: SketchEditorProps) => {
+// --- Pressure Curve Editor Canvas ---
+const PressureCurveCanvas = memo(({ curve, onChange }: {
+  curve: [number, number, number, number];
+  onChange: (c: [number, number, number, number]) => void;
+}) => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const SIZE = 120;
+  const PAD = 12;
+
+  const draw = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = SIZE * dpr;
+    canvas.height = SIZE * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, SIZE, SIZE);
+
+    const area = SIZE - PAD * 2;
+    const toScreen = (nx: number, ny: number) => [PAD + nx * area, PAD + (1 - ny) * area];
+
+    // Background grid
+    ctx.strokeStyle = 'hsl(var(--border) / 0.3)';
+    ctx.lineWidth = 0.5;
+    for (let i = 0; i <= 4; i++) {
+      const p = PAD + (i / 4) * area;
+      ctx.beginPath(); ctx.moveTo(p, PAD); ctx.lineTo(p, PAD + area); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(PAD, p); ctx.lineTo(PAD + area, p); ctx.stroke();
+    }
+
+    // Diagonal (linear reference)
+    ctx.strokeStyle = 'hsl(var(--muted-foreground) / 0.25)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    const [dx0, dy0] = toScreen(0, 0);
+    const [dx1, dy1] = toScreen(1, 1);
+    ctx.moveTo(dx0, dy0); ctx.lineTo(dx1, dy1); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Control point lines
+    const [cx1, cy1] = toScreen(curve[0], curve[1]);
+    const [cx2, cy2] = toScreen(curve[2], curve[3]);
+    const [p0x, p0y] = toScreen(0, 0);
+    const [p1x, p1y] = toScreen(1, 1);
+
+    ctx.strokeStyle = 'hsl(var(--muted-foreground) / 0.4)';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(p0x, p0y); ctx.lineTo(cx1, cy1); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(p1x, p1y); ctx.lineTo(cx2, cy2); ctx.stroke();
+
+    // Bezier curve
+    ctx.strokeStyle = 'hsl(var(--primary))';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(p0x, p0y);
+    ctx.bezierCurveTo(cx1, cy1, cx2, cy2, p1x, p1y);
+    ctx.stroke();
+
+    // Control point handles
+    for (const [cx, cy] of [[cx1, cy1], [cx2, cy2]]) {
+      ctx.beginPath();
+      ctx.arc(cx, cy, 5, 0, Math.PI * 2);
+      ctx.fillStyle = 'hsl(var(--primary))';
+      ctx.fill();
+      ctx.strokeStyle = 'hsl(var(--primary-foreground))';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+
+    // Labels
+    ctx.fillStyle = 'hsl(var(--muted-foreground))';
+    ctx.font = '8px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Input Pressure', SIZE / 2, SIZE - 1);
+    ctx.save();
+    ctx.translate(7, SIZE / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.fillText('Output', 0, 0);
+    ctx.restore();
+  }, [curve]);
+
+  useEffect(() => { draw(); }, [draw]);
+
+  const handleInteraction = useCallback((e: React.MouseEvent<HTMLCanvasElement>, isDrag = false) => {
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const area = SIZE - PAD * 2;
+    const nx = Math.max(0, Math.min(1, (e.clientX - rect.left - PAD) / area));
+    const ny = Math.max(0, Math.min(1, 1 - (e.clientY - rect.top - PAD) / area));
+
+    // Find closest control point
+    const d1 = Math.hypot(nx - curve[0], ny - curve[1]);
+    const d2 = Math.hypot(nx - curve[2], ny - curve[3]);
+    const newCurve: [number, number, number, number] = [...curve];
+    if (d1 <= d2) {
+      newCurve[0] = nx; newCurve[1] = ny;
+    } else {
+      newCurve[2] = nx; newCurve[3] = ny;
+    }
+    onChange(newCurve);
+  }, [curve, onChange]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      width={SIZE}
+      height={SIZE}
+      className="cursor-crosshair rounded-lg border border-border/50 bg-muted/30"
+      style={{ width: SIZE, height: SIZE }}
+      onMouseDown={(e) => {
+        handleInteraction(e);
+        const move = (ev: MouseEvent) => handleInteraction(ev as any, true);
+        const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
+        window.addEventListener('mousemove', move);
+        window.addEventListener('mouseup', up);
+      }}
+    />
+  );
+});
+PressureCurveCanvas.displayName = 'PressureCurveCanvas';
+
+
   const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
