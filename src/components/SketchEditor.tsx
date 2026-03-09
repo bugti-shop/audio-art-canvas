@@ -1143,7 +1143,102 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
   } | null>(null);
   const clipboardRef = useRef<Stroke[]>([]);
 
-  // Text tool state
+  // Smart alignment guides
+  const SNAP_THRESHOLD = 6; // pixels in world coords (adjusted by zoom)
+  const alignmentGuidesRef = useRef<{ type: 'h' | 'v'; pos: number; from: number; to: number }[]>([]);
+
+  /** Collect alignment edges (left, right, top, bottom, centerX, centerY) from all shapes on the active layer, excluding specified indices */
+  const collectAlignmentEdges = useCallback((excludeIndices: Set<number>) => {
+    const layer = layersRef.current.find(l => l.id === activeLayerId);
+    if (!layer) return { xs: [] as number[], ys: [] as number[] };
+    const xs: number[] = [];
+    const ys: number[] = [];
+    layer.strokes.forEach((stroke, i) => {
+      if (excludeIndices.has(i) || stroke.tool === 'eraser') return;
+      const bb = getStrokeBBox(stroke);
+      xs.push(bb.x, bb.x + bb.w, bb.x + bb.w / 2);
+      ys.push(bb.y, bb.y + bb.h, bb.y + bb.h / 2);
+    });
+    // Also collect from sticky notes, images
+    for (const sn of (layer.stickyNotes || [])) {
+      xs.push(sn.x, sn.x + sn.width, sn.x + sn.width / 2);
+      ys.push(sn.y, sn.y + sn.height, sn.y + sn.height / 2);
+    }
+    for (const img of (layer.images || [])) {
+      xs.push(img.x, img.x + img.width, img.x + img.width / 2);
+      ys.push(img.y, img.y + img.height, img.y + img.height / 2);
+    }
+    return { xs, ys };
+  }, [activeLayerId]);
+
+  /** Find snap targets and build guide lines. Returns snapped position delta. */
+  const computeAlignmentSnap = useCallback((
+    bbox: BBox,
+    edges: { xs: number[]; ys: number[] },
+    viewBounds: { vx0: number; vy0: number; vx1: number; vy1: number },
+  ): { dx: number; dy: number } => {
+    const threshold = SNAP_THRESHOLD / zoomRef.current;
+    const guides: { type: 'h' | 'v'; pos: number; from: number; to: number }[] = [];
+    let dx = 0, dy = 0;
+    let bestDistX = threshold, bestDistY = threshold;
+
+    // Our candidate edges: left, center, right
+    const myXs = [bbox.x, bbox.x + bbox.w / 2, bbox.x + bbox.w];
+    const myYs = [bbox.y, bbox.y + bbox.h / 2, bbox.y + bbox.h];
+
+    for (const mx of myXs) {
+      for (const ex of edges.xs) {
+        const dist = Math.abs(mx - ex);
+        if (dist < bestDistX) {
+          bestDistX = dist;
+          dx = ex - mx;
+        }
+      }
+    }
+    for (const my of myYs) {
+      for (const ey of edges.ys) {
+        const dist = Math.abs(my - ey);
+        if (dist < bestDistY) {
+          bestDistY = dist;
+          dy = ey - my;
+        }
+      }
+    }
+
+    // Build visible guide lines for matched edges
+    if (bestDistX < threshold) {
+      const snapX = myXs.find(mx => Math.abs(mx + dx) < 0.01 + Math.abs(dx === 0 ? 0 : mx + dx - edges.xs.find(ex => Math.abs(ex - mx - dx) < 0.5)!)) ?? myXs[0] + dx;
+      // Find the exact x that snapped
+      for (const mx of myXs) {
+        for (const ex of edges.xs) {
+          if (Math.abs(mx + dx - ex) < 0.5) {
+            guides.push({ type: 'v', pos: ex, from: viewBounds.vy0, to: viewBounds.vy1 });
+          }
+        }
+      }
+    }
+    if (bestDistY < threshold) {
+      for (const my of myYs) {
+        for (const ey of edges.ys) {
+          if (Math.abs(my + dy - ey) < 0.5) {
+            guides.push({ type: 'h', pos: ey, from: viewBounds.vx0, to: viewBounds.vx1 });
+          }
+        }
+      }
+    }
+
+    // Deduplicate guides
+    const seen = new Set<string>();
+    alignmentGuidesRef.current = guides.filter(g => {
+      const key = `${g.type}-${g.pos.toFixed(1)}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    return { dx: bestDistX < threshold ? dx : 0, dy: bestDistY < threshold ? dy : 0 };
+  }, []);
+
   const [textFont, setTextFont] = useState('sans-serif');
   const [textFontSize, setTextFontSize] = useState(24);
   const [textBold, setTextBold] = useState(false);
@@ -1869,6 +1964,27 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
       if (bbox) {
         drawSelectionBox(ctx, bbox, selectionRotation, zoom);
       }
+    }
+
+    // Draw smart alignment guides
+    if (alignmentGuidesRef.current.length > 0) {
+      ctx.save();
+      ctx.strokeStyle = 'hsl(340 90% 55% / 0.75)';
+      ctx.lineWidth = 1 / zoom;
+      ctx.setLineDash([4 / zoom, 3 / zoom]);
+      for (const guide of alignmentGuidesRef.current) {
+        ctx.beginPath();
+        if (guide.type === 'v') {
+          ctx.moveTo(guide.pos, guide.from);
+          ctx.lineTo(guide.pos, guide.to);
+        } else {
+          ctx.moveTo(guide.from, guide.pos);
+          ctx.lineTo(guide.to, guide.pos);
+        }
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+      ctx.restore();
     }
 
     // Draw marquee rectangle
@@ -2988,10 +3104,26 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
       const dy = point.y - action.startPos.y;
 
       if (action.type === 'body') {
-        // Move
+        // Compute tentative bbox after move
+        const tentativeBBox: BBox = {
+          x: action.origBBox.x + dx,
+          y: action.origBBox.y + dy,
+          w: action.origBBox.w,
+          h: action.origBBox.h,
+        };
+        const zoom = zoomRef.current;
+        const pan = panRef.current;
+        const { w: cw, h: ch } = canvasSizeRef.current;
+        const vBounds = { vx0: -pan.x / zoom, vy0: -pan.y / zoom, vx1: (-pan.x + cw) / zoom, vy1: (-pan.y + ch) / zoom };
+        const edges = collectAlignmentEdges(new Set(selectedIndices));
+        const snapDelta = computeAlignmentSnap(tentativeBBox, edges, vBounds);
+        const sdx = dx + snapDelta.dx;
+        const sdy = dy + snapDelta.dy;
+
+        // Move with snapped delta
         const transformed = action.origStrokes.map(s => ({
           ...s,
-          points: s.points.map(p => ({ ...p, x: p.x + dx, y: p.y + dy })),
+          points: s.points.map(p => ({ ...p, x: p.x + sdx, y: p.y + sdy })),
         }));
         for (let i = 0; i < selectedIndices.length; i++) {
           if (selectedIndices[i] < layer.strokes.length) {
@@ -3068,9 +3200,26 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
     setPressureValue(currentPressureRef.current);
 
     if (isShapeTool(currentStrokeRef.current.tool)) {
-      const snapped = snapEnabled
+      let snapped = snapEnabled
         ? { ...point, x: snapToGrid(point.x, GRID_SIZES[background]), y: snapToGrid(point.y, GRID_SIZES[background]) }
         : point;
+      // Smart alignment snap for shapes
+      const startPt = currentStrokeRef.current.points[0];
+      const shapeBBox: BBox = {
+        x: Math.min(startPt.x, snapped.x),
+        y: Math.min(startPt.y, snapped.y),
+        w: Math.abs(snapped.x - startPt.x),
+        h: Math.abs(snapped.y - startPt.y),
+      };
+      const zoom = zoomRef.current;
+      const pan = panRef.current;
+      const { w: cw, h: ch } = canvasSizeRef.current;
+      const vBounds = { vx0: -pan.x / zoom, vy0: -pan.y / zoom, vx1: (-pan.x + cw) / zoom, vy1: (-pan.y + ch) / zoom };
+      const edges = collectAlignmentEdges(new Set());
+      const snapDelta = computeAlignmentSnap(shapeBBox, edges, vBounds);
+      if (snapDelta.dx !== 0 || snapDelta.dy !== 0) {
+        snapped = { ...snapped, x: snapped.x + snapDelta.dx, y: snapped.y + snapDelta.dy };
+      }
       currentStrokeRef.current.points = [currentStrokeRef.current.points[0], snapped];
     } else {
       const last = lastPointRef.current;
@@ -3377,6 +3526,7 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
     // Finish selection action
     if (tool === 'select' && selectionActionRef.current) {
       selectionActionRef.current = null;
+      alignmentGuidesRef.current = [];
       forceUpdate(n => n + 1);
       redrawAll();
       emitChange();
@@ -3390,6 +3540,7 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
     setRulerMeasurement(null);
     setShowPressure(false);
     scribbleDetectorRef.current = null;
+    alignmentGuidesRef.current = [];
 
     const finishedStroke = currentStrokeRef.current;
     const minPoints = finishedStroke.tool === 'spray' ? 1 : 2;
