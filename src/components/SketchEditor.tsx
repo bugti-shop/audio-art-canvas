@@ -52,8 +52,6 @@ import type { SketchData } from './sketch';
 import {
   drawStroke, drawBackground, drawSelectionBox, drawArrowhead, createShapeFillStyle,
 } from './sketch';
-import { recognizeShape, convertToCleanShape } from './sketch';
-import type { RecognizedShapeData, ShapeRecognitionResult } from './sketch';
 import { WASHI_PATTERNS, washiPatternCache, drawTornEdge, drawWashiTape } from './sketch';
 import type { WashiTapePattern } from './sketch';
 
