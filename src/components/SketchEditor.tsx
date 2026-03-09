@@ -3526,6 +3526,7 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
     // Finish selection action
     if (tool === 'select' && selectionActionRef.current) {
       selectionActionRef.current = null;
+      alignmentGuidesRef.current = [];
       forceUpdate(n => n + 1);
       redrawAll();
       emitChange();
