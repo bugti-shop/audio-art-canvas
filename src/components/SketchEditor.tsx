@@ -207,7 +207,111 @@ const createDefaultLayers = (): Layer[] => [
   { id: 3, name: 'Layer 3', strokes: [], textAnnotations: [], stickyNotes: [], images: [], washiTapes: [], opacity: 1, visible: true },
 ];
 
-// --- SVG generation ---
+// --- HSL Color Wheel Component ---
+const HslColorWheel = memo(({ hue, saturation, lightness, onHueChange, onSatLightChange }: {
+  hue: number; saturation: number; lightness: number;
+  onHueChange: (h: number) => void;
+  onSatLightChange: (s: number, l: number) => void;
+}) => {
+  const wheelRef = useRef<HTMLCanvasElement>(null);
+  const squareRef = useRef<HTMLCanvasElement>(null);
+  const wheelSize = 160;
+  const ringWidth = 20;
+  const innerSize = wheelSize - ringWidth * 2 - 8;
+
+  useEffect(() => {
+    const canvas = wheelRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const cx = wheelSize / 2, cy = wheelSize / 2;
+    ctx.clearRect(0, 0, wheelSize, wheelSize);
+    // Draw hue ring
+    for (let a = 0; a < 360; a++) {
+      const startAngle = (a - 90) * Math.PI / 180;
+      const endAngle = (a - 89) * Math.PI / 180;
+      ctx.beginPath();
+      ctx.arc(cx, cy, wheelSize / 2 - ringWidth / 2, startAngle, endAngle);
+      ctx.strokeStyle = `hsl(${a}, 100%, 50%)`;
+      ctx.lineWidth = ringWidth;
+      ctx.stroke();
+    }
+    // Hue indicator
+    const indicatorAngle = (hue - 90) * Math.PI / 180;
+    const ix = cx + (wheelSize / 2 - ringWidth / 2) * Math.cos(indicatorAngle);
+    const iy = cy + (wheelSize / 2 - ringWidth / 2) * Math.sin(indicatorAngle);
+    ctx.beginPath();
+    ctx.arc(ix, iy, ringWidth / 2 + 2, 0, Math.PI * 2);
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }, [hue]);
+
+  useEffect(() => {
+    const canvas = squareRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const w = innerSize, h = innerSize;
+    ctx.clearRect(0, 0, w, h);
+    for (let x = 0; x < w; x++) {
+      for (let y = 0; y < h; y++) {
+        const s = x / w;
+        const l = 1 - y / h;
+        ctx.fillStyle = `hsl(${hue}, ${s * 100}%, ${l * 100}%)`;
+        ctx.fillRect(x, y, 1, 1);
+      }
+    }
+    // Indicator
+    const sx = saturation * w;
+    const sy = (1 - lightness) * h;
+    ctx.beginPath();
+    ctx.arc(sx, sy, 6, 0, Math.PI * 2);
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }, [hue, saturation, lightness, innerSize]);
+
+  const handleWheelInteraction = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    const rect = wheelRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const cx = rect.width / 2, cy = rect.height / 2;
+    const x = e.clientX - rect.left - cx, y = e.clientY - rect.top - cy;
+    let angle = Math.atan2(y, x) * 180 / Math.PI + 90;
+    if (angle < 0) angle += 360;
+    onHueChange(Math.round(angle) % 360);
+  }, [onHueChange]);
+
+  const handleSquareInteraction = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    const rect = squareRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const s = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const l = Math.max(0, Math.min(1, 1 - (e.clientY - rect.top) / rect.height));
+    onSatLightChange(s, l);
+  }, [onSatLightChange]);
+
+  return (
+    <div className="relative flex items-center justify-center" style={{ width: wheelSize, height: wheelSize }}>
+      <canvas ref={wheelRef} width={wheelSize} height={wheelSize}
+        className="absolute inset-0 cursor-crosshair"
+        onMouseDown={(e) => { handleWheelInteraction(e); const move = (ev: MouseEvent) => handleWheelInteraction(ev as any); const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); }; window.addEventListener('mousemove', move); window.addEventListener('mouseup', up); }}
+      />
+      <canvas ref={squareRef} width={innerSize} height={innerSize}
+        className="cursor-crosshair rounded-sm"
+        style={{ width: innerSize, height: innerSize }}
+        onMouseDown={(e) => { handleSquareInteraction(e); const move = (ev: MouseEvent) => handleSquareInteraction(ev as any); const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); }; window.addEventListener('mousemove', move); window.addEventListener('mouseup', up); }}
+      />
+    </div>
+  );
+});
+HslColorWheel.displayName = 'HslColorWheel';
+
 
 const strokeToSvgPath = (stroke: Stroke): string => {
   if (stroke.points.length < 1 || stroke.tool === 'eraser' || stroke.tool === 'select') return '';
