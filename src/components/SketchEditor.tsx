@@ -3163,9 +3163,26 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
     setPressureValue(currentPressureRef.current);
 
     if (isShapeTool(currentStrokeRef.current.tool)) {
-      const snapped = snapEnabled
+      let snapped = snapEnabled
         ? { ...point, x: snapToGrid(point.x, GRID_SIZES[background]), y: snapToGrid(point.y, GRID_SIZES[background]) }
         : point;
+      // Smart alignment snap for shapes
+      const startPt = currentStrokeRef.current.points[0];
+      const shapeBBox: BBox = {
+        x: Math.min(startPt.x, snapped.x),
+        y: Math.min(startPt.y, snapped.y),
+        w: Math.abs(snapped.x - startPt.x),
+        h: Math.abs(snapped.y - startPt.y),
+      };
+      const zoom = zoomRef.current;
+      const pan = panRef.current;
+      const { w: cw, h: ch } = canvasSizeRef.current;
+      const vBounds = { vx0: -pan.x / zoom, vy0: -pan.y / zoom, vx1: (-pan.x + cw) / zoom, vy1: (-pan.y + ch) / zoom };
+      const edges = collectAlignmentEdges(new Set());
+      const snapDelta = computeAlignmentSnap(shapeBBox, edges, vBounds);
+      if (snapDelta.dx !== 0 || snapDelta.dy !== 0) {
+        snapped = { ...snapped, x: snapped.x + snapDelta.dx, y: snapped.y + snapDelta.dy };
+      }
       currentStrokeRef.current.points = [currentStrokeRef.current.points[0], snapped];
     } else {
       const last = lastPointRef.current;
