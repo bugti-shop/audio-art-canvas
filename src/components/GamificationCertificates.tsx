@@ -274,11 +274,10 @@ export const GamificationCertificates = ({ isOpen, onClose, streakData }: Certif
     const load = async () => {
       setIsLoading(true);
       try {
-        const [tasks, notes, folders, adminBypass, seenCerts] = await Promise.all([
+        const [tasks, notes, folders, seenCerts] = await Promise.all([
           loadTodoItems(),
           loadNotesFromDB(),
           loadFolders(),
-          getSettingForAdmin<boolean>('npd_admin_bypass', false),
           getSetting<string[]>('npd_seen_certificates', []),
         ]);
 
@@ -293,7 +292,6 @@ export const GamificationCertificates = ({ isOpen, onClose, streakData }: Certif
           longestStreak: streakData?.longestStreak || 0,
           notesCreated: notes.length,
           foldersUsed: usedFolderIds.size,
-          isAdmin: !!adminBypass,
         };
         setProgress(userProgress);
 
