@@ -1319,30 +1319,14 @@ const recognizeShape = (points: Point[]): RecognizedShape => {
   const rx = bw / 2;
   const ry = bh / 2;
 
-  // --- Circle/Ellipse detection ---
-  // Check how well points fit an ellipse
-  let circleErr = 0;
-  for (const p of points) {
-    const nx = (p.x - cx) / rx;
-    const ny = (p.y - cy) / ry;
-    const d = Math.sqrt(nx * nx + ny * ny);
-    circleErr += (d - 1) ** 2;
-  }
-  circleErr = Math.sqrt(circleErr / points.length);
-  if (circleErr < 0.25) {
-    return { type: 'circle', cx, cy, rx, ry };
-  }
-
-  // --- Corner detection for rectangle/triangle ---
+  // --- Corner detection for rectangle/triangle/star (check BEFORE circle) ---
   const corners = detectCorners(points, totalLen);
 
   // Rectangle: ~4 corners, roughly right angles
   if (corners.length >= 4 && corners.length <= 6) {
-    // Pick the 4 most prominent corners
     const top4 = corners.slice(0, 4);
-    // Check if they form a roughly rectangular shape
     const rectErr = getRectangleFit(top4, minX, minY, maxX, maxY);
-    if (rectErr < 0.2) {
+    if (rectErr < 0.25) {
       return { type: 'rect', x: minX, y: minY, w: bw, h: bh };
     }
   }
@@ -1355,8 +1339,7 @@ const recognizeShape = (points: Point[]): RecognizedShape => {
       (top3[2].x - top3[0].x) * (top3[1].y - top3[0].y)
     ) / 2;
     const bboxArea = bw * bh;
-    // A triangle's area should be roughly half the bbox area
-    if (triArea > bboxArea * 0.25 && triArea < bboxArea * 0.7) {
+    if (triArea > bboxArea * 0.2 && triArea < bboxArea * 0.75) {
       return {
         type: 'triangle',
         x1: top3[0].x, y1: top3[0].y,
@@ -1366,29 +1349,24 @@ const recognizeShape = (points: Point[]): RecognizedShape => {
     }
   }
 
-  // --- Star detection: 5 corners with alternating in/out pattern ---
+  // --- Star detection ---
   if (corners.length >= 5 && corners.length <= 7) {
     const top5 = corners.slice(0, 5);
-    // Check if corners alternate between inner and outer radii from center
     const dists = top5.map(c => Math.sqrt((c.x - cx) ** 2 + (c.y - cy) ** 2));
     const avgDist = dists.reduce((a, b) => a + b, 0) / dists.length;
-    // Sort corners by angle from center
     const withAngles = top5.map(c => ({ ...c, angle: Math.atan2(c.y - cy, c.x - cx) }));
     withAngles.sort((a, b) => a.angle - b.angle);
     const sortedDists = withAngles.map(c => Math.sqrt((c.x - cx) ** 2 + (c.y - cy) ** 2));
-    // Check alternating pattern (inner/outer)
     let alternating = 0;
     for (let i = 1; i < sortedDists.length; i++) {
       const prev = sortedDists[i - 1] > avgDist;
       const curr = sortedDists[i] > avgDist;
       if (prev !== curr) alternating++;
     }
-    // At least 3 alternations for 5 points = star-like
     if (alternating >= 3) {
       const maxR = Math.max(...dists);
       return { type: 'star', cx, cy, r: maxR };
     }
-    // Also detect star if 5 points are roughly evenly distributed around center
     const angleDiffs: number[] = [];
     for (let i = 1; i < withAngles.length; i++) {
       angleDiffs.push(withAngles[i].angle - withAngles[i - 1].angle);
@@ -1400,6 +1378,19 @@ const recognizeShape = (points: Point[]): RecognizedShape => {
       const maxR = Math.max(...dists);
       return { type: 'star', cx, cy, r: maxR };
     }
+  }
+
+  // --- Circle/Ellipse detection (LAST, fallback) ---
+  let circleErr = 0;
+  for (const p of points) {
+    const nx = (p.x - cx) / rx;
+    const ny = (p.y - cy) / ry;
+    const d = Math.sqrt(nx * nx + ny * ny);
+    circleErr += (d - 1) ** 2;
+  }
+  circleErr = Math.sqrt(circleErr / points.length);
+  if (circleErr < 0.2) {
+    return { type: 'circle', cx, cy, rx, ry };
   }
 
   return null;
