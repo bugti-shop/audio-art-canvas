@@ -959,6 +959,10 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
   const cursorHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [cursorHidden, setCursorHidden] = useState(false);
   
+  // Eraser cursor preview
+  const eraserCursorRef = useRef<{ x: number; y: number } | null>(null);
+  const [eraserCursorPos, setEraserCursorPos] = useState<{ x: number; y: number } | null>(null);
+  
   // Laser pointer state
   const laserTrailRef = useRef<{ x: number; y: number; time: number }[]>([]);
   const laserRafRef = useRef(0);
