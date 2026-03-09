@@ -7698,12 +7698,36 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
         {eyedropperActive && (
           <div className="absolute top-2 left-2 bg-primary text-primary-foreground rounded-lg px-2 py-1 text-[10px] flex items-center gap-1">
             <Pipette className="h-3 w-3" />{t('sketch.tapToPickColor')}
-            {/* Fill color for selected strokes */}
+          </div>
+        )}
+        {/* Selection floating actions */}
+        {hasSelection && tool === 'select' && (
+          <div className="absolute top-2 left-2 bg-card/95 backdrop-blur-sm border border-border rounded-lg px-1 py-1 flex items-center gap-0.5">
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleCopySelection} title={t('sketch.copy')}>
+              <Copy className="h-3.5 w-3.5" />
+            </Button>
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handlePasteSelection} title={t('sketch.paste')}>
+              <Clipboard className="h-3.5 w-3.5" />
+            </Button>
+            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={handleDeleteSelection} title={t('sketch.delete')}>
+              <Trash className="h-3.5 w-3.5" />
+            </Button>
+            <Button variant="ghost" size="icon" className="h-7 w-7 text-primary" onClick={handleSaveAsSticker} title={t('sketch.saveAsSticker')}>
+              <BookmarkPlus className="h-3.5 w-3.5" />
+            </Button>
+            {/* Fill color for selected shape strokes */}
             {(() => {
-              const selStrokes = getSelectedStrokes();
-              if (selStrokes.length === 0) return null;
-              const currentFill = selStrokes[0]?.fillColor;
-              const currentFillOpacity = selStrokes[0]?.fillOpacity ?? 0.3;
+              const layer = layersRef.current.find(l => l.id === activeLayerId);
+              if (!layer) return null;
+              const selectedShapeIndices = selectedIndices.filter(idx => {
+                const s = layer.strokes[idx];
+                return !!s && isShapeTool(s.tool);
+              });
+              if (selectedShapeIndices.length === 0) return null;
+              const selectedShapeStrokes = selectedShapeIndices.map(idx => layer.strokes[idx]);
+              const currentFill = selectedShapeStrokes[0]?.fillColor;
+              const currentFillOpacity = selectedShapeStrokes[0]?.fillOpacity ?? 0.3;
+
               return (
                 <Popover>
                   <PopoverTrigger asChild>
@@ -7726,11 +7750,9 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
                         className={cn('w-6 h-6 rounded-full border-2 transition-transform active:scale-90 flex items-center justify-center',
                           !currentFill ? 'border-primary scale-110' : 'border-border')}
                         onClick={() => {
-                          const layer = layersRef.current.find(l => l.id === activeLayerId);
-                          if (!layer) return;
                           undoStackRef.current = [...undoStackRef.current.slice(-(MAX_UNDO - 1)), cloneLayers(layersRef.current)];
                           redoStackRef.current = [];
-                          for (const idx of selectedIndices) {
+                          for (const idx of selectedShapeIndices) {
                             const s = layer.strokes[idx];
                             if (s) { delete s.fillColor; delete s.fillOpacity; }
                           }
@@ -7748,13 +7770,14 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
                             currentFill === c ? 'border-primary scale-110' : 'border-border')}
                           style={{ backgroundColor: c }}
                           onClick={() => {
-                            const layer = layersRef.current.find(l => l.id === activeLayerId);
-                            if (!layer) return;
                             undoStackRef.current = [...undoStackRef.current.slice(-(MAX_UNDO - 1)), cloneLayers(layersRef.current)];
                             redoStackRef.current = [];
-                            for (const idx of selectedIndices) {
+                            for (const idx of selectedShapeIndices) {
                               const s = layer.strokes[idx];
-                              if (s) { s.fillColor = c; s.fillOpacity = s.fillOpacity ?? 0.3; }
+                              if (s) {
+                                s.fillColor = c;
+                                s.fillOpacity = s.fillOpacity ?? 0.3;
+                              }
                             }
                             redrawAll();
                             emitChange();
@@ -7767,13 +7790,11 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
                       <div>
                         <p className="text-[10px] text-muted-foreground mb-1">{t('sketch.fillOpacity')}: {Math.round(currentFillOpacity * 100)}%</p>
                         <Slider min={5} max={100} step={5} value={[Math.round(currentFillOpacity * 100)]} onValueChange={([v]) => {
-                          const layer = layersRef.current.find(l => l.id === activeLayerId);
-                          if (!layer) return;
                           undoStackRef.current = [...undoStackRef.current.slice(-(MAX_UNDO - 1)), cloneLayers(layersRef.current)];
                           redoStackRef.current = [];
-                          for (const idx of selectedIndices) {
+                          for (const idx of selectedShapeIndices) {
                             const s = layer.strokes[idx];
-                            if (s) { s.fillOpacity = v / 100; }
+                            if (s) s.fillOpacity = v / 100;
                           }
                           redrawAll();
                           emitChange();
@@ -7785,29 +7806,12 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
                 </Popover>
               );
             })()}
-          </div>
-        )}
-        {/* Selection floating actions */}
-        {hasSelection && tool === 'select' && (
-          <div className="absolute top-2 left-2 bg-card/95 backdrop-blur-sm border border-border rounded-lg px-1 py-1 flex items-center gap-0.5">
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleCopySelection} title={t('sketch.copy')}>
-              <Copy className="h-3.5 w-3.5" />
-            </Button>
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handlePasteSelection} title={t('sketch.paste')}>
-              <Clipboard className="h-3.5 w-3.5" />
-            </Button>
-            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={handleDeleteSelection} title={t('sketch.delete')}>
-              <Trash className="h-3.5 w-3.5" />
-            </Button>
-            <Button variant="ghost" size="icon" className="h-7 w-7 text-primary" onClick={handleSaveAsSticker} title={t('sketch.saveAsSticker')}>
-              <BookmarkPlus className="h-3.5 w-3.5" />
-            </Button>
             {/* Clip mask toggle for selected shape strokes */}
             {(() => {
               const selStrokes = getSelectedStrokes();
-              const hasShapeSelected = selStrokes.some(s => isShapeTool(s.tool));
-              if (!hasShapeSelected) return null;
-              const allClipped = selStrokes.filter(s => isShapeTool(s.tool)).every(s => s.isClipMask);
+              const selectedShapeStrokes = selStrokes.filter(s => isShapeTool(s.tool));
+              if (selectedShapeStrokes.length === 0) return null;
+              const allClipped = selectedShapeStrokes.every(s => s.isClipMask);
               return (
                 <Button
                   variant={allClipped ? "default" : "ghost"}
