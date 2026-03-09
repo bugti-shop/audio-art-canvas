@@ -2377,12 +2377,15 @@ const drawStroke = (ctx: CanvasRenderingContext2D, stroke: Stroke, asClipPath?: 
     if (stroke.points.length < 2) { ctx.restore(); return; }
     ctx.strokeStyle = stroke.color; ctx.lineWidth = stroke.width;
     const hasFill = stroke.fillColor && stroke.fillOpacity && stroke.fillOpacity > 0;
+    const shapeBx = Math.min(start.x, end.x), shapeBy = Math.min(start.y, end.y);
+    const shapeBw = Math.abs(end.x - start.x), shapeBh = Math.abs(end.y - start.y);
+    const getShapeFill = () => hasFill ? createShapeFillStyle(ctx, stroke, shapeBx, shapeBy, shapeBw, shapeBh) : null;
+    const applyFill = () => { const fs = getShapeFill(); if (fs) { ctx.fillStyle = fs; ctx.fill(); } };
     switch (stroke.tool) {
       case 'line': ctx.beginPath(); ctx.moveTo(start.x, start.y); ctx.lineTo(end.x, end.y); ctx.stroke(); break;
       case 'rect':
         if (hasFill) {
-          ctx.fillStyle = hexToRgba(stroke.fillColor!, stroke.fillOpacity!);
-          ctx.fillRect(start.x, start.y, end.x - start.x, end.y - start.y);
+          const fs = getShapeFill(); if (fs) { ctx.fillStyle = fs; ctx.fillRect(start.x, start.y, end.x - start.x, end.y - start.y); }
         }
         ctx.strokeRect(start.x, start.y, end.x - start.x, end.y - start.y);
         break;
@@ -2390,10 +2393,7 @@ const drawStroke = (ctx: CanvasRenderingContext2D, stroke: Stroke, asClipPath?: 
         const rx = Math.abs(end.x - start.x) / 2; const ry = Math.abs(end.y - start.y) / 2;
         const cx = start.x + (end.x - start.x) / 2; const cy = start.y + (end.y - start.y) / 2;
         ctx.beginPath(); ctx.ellipse(cx, cy, Math.max(1, rx), Math.max(1, ry), 0, 0, Math.PI * 2);
-        if (hasFill) {
-          ctx.fillStyle = hexToRgba(stroke.fillColor!, stroke.fillOpacity!);
-          ctx.fill();
-        }
+        applyFill();
         ctx.stroke();
         break;
       }
@@ -2403,13 +2403,13 @@ const drawStroke = (ctx: CanvasRenderingContext2D, stroke: Stroke, asClipPath?: 
       case 'triangle': {
         const mx = (start.x + end.x) / 2;
         ctx.beginPath(); ctx.moveTo(mx, start.y); ctx.lineTo(end.x, end.y); ctx.lineTo(start.x, end.y); ctx.closePath();
-        if (hasFill) { ctx.fillStyle = hexToRgba(stroke.fillColor!, stroke.fillOpacity!); ctx.fill(); }
+        applyFill();
         ctx.stroke(); break;
       }
       case 'diamond': {
         const cx = (start.x + end.x) / 2, cy = (start.y + end.y) / 2;
         ctx.beginPath(); ctx.moveTo(cx, start.y); ctx.lineTo(end.x, cy); ctx.lineTo(cx, end.y); ctx.lineTo(start.x, cy); ctx.closePath();
-        if (hasFill) { ctx.fillStyle = hexToRgba(stroke.fillColor!, stroke.fillOpacity!); ctx.fill(); }
+        applyFill();
         ctx.stroke(); break;
       }
       case 'star': {
@@ -2424,7 +2424,7 @@ const drawStroke = (ctx: CanvasRenderingContext2D, stroke: Stroke, asClipPath?: 
           i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
         }
         ctx.closePath();
-        if (hasFill) { ctx.fillStyle = hexToRgba(stroke.fillColor!, stroke.fillOpacity!); ctx.fill(); }
+        applyFill();
         ctx.stroke(); break;
       }
       case 'polygon': {
@@ -2438,7 +2438,7 @@ const drawStroke = (ctx: CanvasRenderingContext2D, stroke: Stroke, asClipPath?: 
           i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
         }
         ctx.closePath();
-        if (hasFill) { ctx.fillStyle = hexToRgba(stroke.fillColor!, stroke.fillOpacity!); ctx.fill(); }
+        applyFill();
         ctx.stroke(); break;
       }
       case 'pentagon': {
@@ -2451,7 +2451,7 @@ const drawStroke = (ctx: CanvasRenderingContext2D, stroke: Stroke, asClipPath?: 
           i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
         }
         ctx.closePath();
-        if (hasFill) { ctx.fillStyle = hexToRgba(stroke.fillColor!, stroke.fillOpacity!); ctx.fill(); }
+        applyFill();
         ctx.stroke(); break;
       }
       case 'heart': {
@@ -2464,7 +2464,7 @@ const drawStroke = (ctx: CanvasRenderingContext2D, stroke: Stroke, asClipPath?: 
         ctx.bezierCurveTo(cx + w * 0.4, cy - h, cx + w, cy - h * 0.8, cx + w, cy - h * 0.2);
         ctx.bezierCurveTo(cx + w, cy + h * 0.2, cx + w * 0.1, cy + h * 0.6, cx, cy + h * 0.9);
         ctx.closePath();
-        if (hasFill) { ctx.fillStyle = hexToRgba(stroke.fillColor!, stroke.fillOpacity!); ctx.fill(); }
+        applyFill();
         ctx.stroke(); break;
       }
       case 'moon': {
@@ -2472,7 +2472,7 @@ const drawStroke = (ctx: CanvasRenderingContext2D, stroke: Stroke, asClipPath?: 
         const r = Math.max(Math.abs(end.x - start.x), Math.abs(end.y - start.y)) / 2;
         ctx.beginPath();
         ctx.arc(cx, cy, r, 0, Math.PI * 2);
-        if (hasFill) { ctx.fillStyle = hexToRgba(stroke.fillColor!, stroke.fillOpacity!); ctx.fill(); }
+        applyFill();
         ctx.stroke();
         // Inner cutout
         ctx.save();
@@ -2497,7 +2497,7 @@ const drawStroke = (ctx: CanvasRenderingContext2D, stroke: Stroke, asClipPath?: 
         ctx.bezierCurveTo(cx + w * 0.3, cy - h, cx + w * 0.8, cy - h * 0.8, cx + w * 0.7, cy - h * 0.3);
         ctx.bezierCurveTo(cx + w, cy - h * 0.2, cx + w, cy + h * 0.3, cx + w * 0.6, cy + h * 0.3);
         ctx.closePath();
-        if (hasFill) { ctx.fillStyle = hexToRgba(stroke.fillColor!, stroke.fillOpacity!); ctx.fill(); }
+        applyFill();
         ctx.stroke(); break;
       }
       case 'speechBubble': {
@@ -2519,7 +2519,7 @@ const drawStroke = (ctx: CanvasRenderingContext2D, stroke: Stroke, asClipPath?: 
         ctx.lineTo(x, y + r2);
         ctx.arcTo(x, y, x + r2, y, r2);
         ctx.closePath();
-        if (hasFill) { ctx.fillStyle = hexToRgba(stroke.fillColor!, stroke.fillOpacity!); ctx.fill(); }
+        applyFill();
         ctx.stroke(); break;
       }
       case 'cylinder': {
@@ -2528,10 +2528,13 @@ const drawStroke = (ctx: CanvasRenderingContext2D, stroke: Stroke, asClipPath?: 
         const ellipseH = h * 0.15;
         const cx = x + w / 2;
         if (hasFill) {
-          ctx.fillStyle = hexToRgba(stroke.fillColor!, stroke.fillOpacity!);
-          ctx.beginPath(); ctx.ellipse(cx, y + ellipseH, w / 2, ellipseH, 0, 0, Math.PI * 2); ctx.fill();
-          ctx.fillRect(x, y + ellipseH, w, h - ellipseH * 2);
-          ctx.beginPath(); ctx.ellipse(cx, y + h - ellipseH, w / 2, ellipseH, 0, 0, Math.PI * 2); ctx.fill();
+          const fs = getShapeFill();
+          if (fs) {
+            ctx.fillStyle = fs;
+            ctx.beginPath(); ctx.ellipse(cx, y + ellipseH, w / 2, ellipseH, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.fillRect(x, y + ellipseH, w, h - ellipseH * 2);
+            ctx.beginPath(); ctx.ellipse(cx, y + h - ellipseH, w / 2, ellipseH, 0, 0, Math.PI * 2); ctx.fill();
+          }
         }
         // Side lines
         ctx.beginPath(); ctx.moveTo(x, y + ellipseH); ctx.lineTo(x, y + h - ellipseH); ctx.stroke();
@@ -2550,7 +2553,7 @@ const drawStroke = (ctx: CanvasRenderingContext2D, stroke: Stroke, asClipPath?: 
         ctx.moveTo(x + inset, y); ctx.lineTo(x + w - inset, y);
         ctx.lineTo(x + w, y + h); ctx.lineTo(x, y + h);
         ctx.closePath();
-        if (hasFill) { ctx.fillStyle = hexToRgba(stroke.fillColor!, stroke.fillOpacity!); ctx.fill(); }
+        applyFill();
         ctx.stroke(); break;
       }
       case 'cone': {
@@ -2565,7 +2568,7 @@ const drawStroke = (ctx: CanvasRenderingContext2D, stroke: Stroke, asClipPath?: 
         ctx.moveTo(cx, y); ctx.lineTo(cx - w, y + h - ellipseH);
         ctx.stroke();
         ctx.beginPath(); ctx.ellipse(cx, y + h - ellipseH, w, ellipseH, 0, 0, Math.PI * 2);
-        if (hasFill) { ctx.fillStyle = hexToRgba(stroke.fillColor!, stroke.fillOpacity!); ctx.fill(); }
+        applyFill();
         ctx.stroke(); break;
       }
     }
