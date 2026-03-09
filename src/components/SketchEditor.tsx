@@ -14,7 +14,7 @@ import {
   Type, Bold, Italic, Triangle, Star, Diamond, Hexagon, Navigation,
   Droplets, CircleDot, PaintbrushVertical, PenLine, StickyNote, ImagePlus, Sparkles,
   Heart, Cloud, MessageSquare, Pentagon, Moon, Cylinder,
-  Mic, Square as StopSquare, Wand2, ChevronLeft, ChevronRight, FileUp, Video, Repeat,
+  Mic, Square as StopSquare, ChevronLeft, ChevronRight, FileUp, Video, Repeat,
   Search, X, Hand, ZoomOut, Shrink,
 } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -52,8 +52,6 @@ import type { SketchData } from './sketch';
 import {
   drawStroke, drawBackground, drawSelectionBox, drawArrowhead, createShapeFillStyle,
 } from './sketch';
-import { recognizeShape, convertToCleanShape } from './sketch';
-import type { RecognizedShapeData, ShapeRecognitionResult } from './sketch';
 import { WASHI_PATTERNS, washiPatternCache, drawTornEdge, drawWashiTape } from './sketch';
 import type { WashiTapePattern } from './sketch';
 
@@ -1217,9 +1215,6 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
     requestAnimationFrame(() => emitChangeRef.current?.());
   }, []);
 
-  // Shape recognition state
-  const [shapeRecognitionEnabled, setShapeRecognitionEnabled] = useState(true);
-  const [shapeConfidenceBadge, setShapeConfidenceBadge] = useState<{ label: string; confidence: number; x: number; y: number } | null>(null);
 
   // SVG import ref
   const svgInputRef = useRef<HTMLInputElement>(null);
@@ -3706,22 +3701,7 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
       redoStackRef.current = [];
       const layer = layersRef.current.find(l => l.id === activeLayerId);
       if (layer) {
-        // Shape recognition: convert freehand to clean shapes
-        let strokeToAdd = finishedStroke;
-        if (shapeRecognitionEnabled && !isShapeTool(finishedStroke.tool) && finishedStroke.tool !== 'eraser' && finishedStroke.tool !== 'washi') {
-          const result = recognizeShape(finishedStroke.points);
-          if (result) {
-            const cleanStroke = convertToCleanShape(finishedStroke, result.shape);
-            if (cleanStroke) {
-              strokeToAdd = cleanStroke;
-              const shapeName = result.shape.type.charAt(0).toUpperCase() + result.shape.type.slice(1);
-              // Show confidence badge on canvas
-              setShapeConfidenceBadge({ label: shapeName, confidence: result.confidence, x: finishedStroke.points[0].x, y: finishedStroke.points[0].y });
-              setTimeout(() => setShapeConfidenceBadge(null), 2500);
-              toast.success(`✨ ${t('sketch.shapeDetected', { shape: shapeName })} — ${result.confidence}%`, { duration: 2000 });
-            }
-          }
-        }
+        const strokeToAdd = finishedStroke;
 
         // Stamp stroke with audio timestamp if recording
         if (isAudioRecording && audioRecordingStartRef.current > 0) {
@@ -3757,7 +3737,7 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
     currentStrokeRef.current = null;
     redrawAll();
     emitChange();
-  }, [redrawAll, emitChange, activeLayerId, tool, symmetryMode, isAudioRecording, isTimelapseRecording, shapeRecognitionEnabled, presentationMode, pdfPages, pdfPageIndex]);
+  }, [redrawAll, emitChange, activeLayerId, tool, symmetryMode, isAudioRecording, isTimelapseRecording, presentationMode, pdfPages, pdfPageIndex]);
 
   // --- Presentation mode: fullscreen, keyboard nav, auto-hide cursor ---
   const enterPresentationMode = useCallback(() => {
@@ -5449,25 +5429,6 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
         {eyedropperActive && (
           <div className="absolute top-2 left-2 bg-primary text-primary-foreground rounded-lg px-2 py-1 text-[10px] flex items-center gap-1">
             <Pipette className="h-3 w-3" />{t('sketch.tapToPickColor')}
-          </div>
-        )}
-        {/* Shape confidence badge */}
-        {shapeConfidenceBadge && (
-          <div
-            className="absolute top-12 left-1/2 -translate-x-1/2 z-30 pointer-events-none animate-in fade-in zoom-in-90 duration-300"
-          >
-            <div className={cn(
-              'flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-semibold shadow-lg border backdrop-blur-md',
-              shapeConfidenceBadge.confidence >= 85
-                ? 'bg-green-500/20 border-green-500/40 text-green-700 dark:text-green-300'
-                : shapeConfidenceBadge.confidence >= 65
-                ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-700 dark:text-yellow-300'
-                : 'bg-red-500/20 border-red-500/40 text-red-700 dark:text-red-300'
-            )}>
-              <Wand2 className="h-3 w-3" />
-              <span>{shapeConfidenceBadge.label}</span>
-              <span className="font-bold">{shapeConfidenceBadge.confidence}%</span>
-            </div>
           </div>
         )}
         {/* Selection floating actions */}
@@ -7302,22 +7263,6 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
           </PopoverContent>
         </Popover>
 
-        {/* Shape Recognition toggle */}
-        <button
-          className={cn(
-            'h-10 w-10 flex-shrink-0 rounded-xl flex items-center justify-center transition-all duration-200',
-            shapeRecognitionEnabled
-              ? 'bg-primary/15 text-primary scale-105 ring-2 ring-primary/20'
-              : 'text-foreground/70 hover:bg-muted/80 hover:text-foreground active:scale-95'
-          )}
-          onClick={() => {
-            setShapeRecognitionEnabled(!shapeRecognitionEnabled);
-            toast.success(shapeRecognitionEnabled ? t('sketch.shapeRecognitionOff', 'Shape recognition off') : t('sketch.shapeRecognitionOn', 'Shape recognition on ✨'), { duration: 1500 });
-          }}
-          title={shapeRecognitionEnabled ? t('sketch.shapeRecognitionOff', 'Shape recognition off') : t('sketch.shapeRecognitionOn', 'Shape recognition on')}
-        >
-          <Wand2 className="h-5 w-5" strokeWidth={shapeRecognitionEnabled ? 2.5 : 1.8} />
-        </button>
 
         {/* Symmetry mode toggle */}
         <Popover open={openToolbarPopover === 'symmetry'} onOpenChange={(o) => setOpenToolbarPopover(o ? 'symmetry' : null)}>
