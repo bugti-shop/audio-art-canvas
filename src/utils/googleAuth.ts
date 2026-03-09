@@ -285,19 +285,14 @@ export const getValidAccessToken = async (): Promise<string | null> => {
   // If token is still valid, return it directly
   if (isTokenValid(user)) return user.accessToken;
   
-  // Token expired — try silent refresh on web only (no UI popup)
-  // On native, just return the existing token and let API calls handle 401
-  if (!isNative()) {
-    try {
-      const refreshed = await silentWebRefresh();
-      if (refreshed) return refreshed.accessToken;
-    } catch {
-      // Silent refresh failed, fall through to return existing token
-    }
+  // Token expired — try to refresh
+  try {
+    const refreshed = isNative() ? await nativeRefresh() : await silentWebRefresh();
+    if (refreshed) return refreshed.accessToken;
+  } catch {
+    // Refresh failed, fall through
   }
   
-  // Return existing token even if "expired" — Google tokens often remain
-  // valid slightly beyond their stated expiry. If the API rejects it,
-  // the caller should handle the error and prompt the user to re-sign-in.
+  // Return existing token as last resort — caller should handle 401
   return user.accessToken;
 };
