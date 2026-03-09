@@ -1614,7 +1614,7 @@ const recognizeShape = (points: Point[]): RecognizedShape => {
     circleErr += (d - 1) ** 2;
   }
   circleErr = Math.sqrt(circleErr / points.length);
-  if (circleErr < 0.22) {
+  if (circleErr < 0.19 && circularity > 0.72) {
     return { type: 'circle', cx, cy, rx, ry };
   }
 
