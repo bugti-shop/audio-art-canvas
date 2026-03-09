@@ -7186,9 +7186,18 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
                   <FileImage className="h-3.5 w-3.5" />{t('sketch.insertPng')}
                 </Button>
               )}
-              <Button variant="ghost" size="sm" className="h-8 text-xs justify-start gap-2 px-2" onClick={handleDownloadPng}>
-                <FileImage className="h-3.5 w-3.5" />{t('sketch.downloadPng')}
-              </Button>
+              <div className="flex flex-col gap-0.5">
+                <p className="text-[10px] font-medium text-muted-foreground px-2 pt-1">PNG Export</p>
+                {[
+                  { label: '1x (Standard)', res: 1 },
+                  { label: '2x (Retina)', res: 2 },
+                  { label: '4x (Print)', res: 4 },
+                ].map(opt => (
+                  <Button key={opt.res} variant="ghost" size="sm" className="h-8 text-xs justify-start gap-2 px-2" onClick={() => handleDownloadPng(opt.res)}>
+                    <FileImage className="h-3.5 w-3.5" />{opt.label}
+                  </Button>
+                ))}
+              </div>
               <Button variant="ghost" size="sm" className="h-8 text-xs justify-start gap-2 px-2" onClick={handleExportSvg}>
                 <FileCode className="h-3.5 w-3.5" />{t('sketch.exportSvg')}
               </Button>
