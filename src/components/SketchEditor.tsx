@@ -4833,6 +4833,7 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
             'absolute inset-0',
             isPanning ? (isPanningRef.current ? 'cursor-grabbing' : 'cursor-grab') :
             eyedropperActive ? 'cursor-cell' :
+            tool === 'eraser' ? 'cursor-none' :
             tool === 'text' ? 'cursor-text' :
             tool === 'pdfTextSelect' ? 'cursor-text' :
             tool === 'sticky' ? 'cursor-crosshair' :
@@ -4841,8 +4842,22 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
             tool === 'select' ? 'cursor-default' : 'cursor-crosshair'
           )}
           style={{ touchAction: 'none' }}
+          onPointerEnter={() => { if (tool === 'eraser') setEraserCursorPos(eraserCursorRef.current); }}
+          onPointerLeave={() => setEraserCursorPos(null)}
         />
-        {/* Video Panel */}
+        {/* Eraser cursor preview */}
+        {tool === 'eraser' && eraserCursorPos && (
+          <div
+            className="absolute pointer-events-none z-10 rounded-full border-2 border-foreground/60"
+            style={{
+              width: strokeWidth * zoomRef.current * 2,
+              height: strokeWidth * zoomRef.current * 2,
+              left: eraserCursorPos.x - strokeWidth * zoomRef.current,
+              top: eraserCursorPos.y - strokeWidth * zoomRef.current,
+              backgroundColor: 'hsl(var(--foreground) / 0.08)',
+            }}
+          />
+        )}
         {showVideoPanel && !presentationMode && (
           <SketchVideoPanel
             onClose={() => { setShowVideoPanel(false); }}
