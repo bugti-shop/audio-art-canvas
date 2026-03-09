@@ -7701,11 +7701,8 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
         )}
         {/* Shape confidence badge */}
         {shapeConfidenceBadge && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.8, y: 10 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.7 }}
-            className="absolute top-12 left-1/2 -translate-x-1/2 z-30 pointer-events-none"
+          <div
+            className="absolute top-12 left-1/2 -translate-x-1/2 z-30 pointer-events-none animate-in fade-in zoom-in-90 duration-300"
           >
             <div className={cn(
               'flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-semibold shadow-lg border backdrop-blur-md',
@@ -7719,7 +7716,7 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
               <span>{shapeConfidenceBadge.label}</span>
               <span className="font-bold">{shapeConfidenceBadge.confidence}%</span>
             </div>
-          </motion.div>
+          </div>
         )}
         {/* Selection floating actions */}
         {hasSelection && tool === 'select' && (
