@@ -9202,8 +9202,22 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
             />
             <div className="flex items-center gap-2 mt-2 mb-2">
               <div className="w-8 h-8 rounded-lg border border-border flex-shrink-0" style={{ backgroundColor: color }} />
-              <input type="text" value={color}
-                onChange={(e) => { if (/^#[0-9a-fA-F]{6}$/.test(e.target.value)) applyColor(e.target.value); }}
+              <input type="text"
+                defaultValue={color}
+                key={color}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (/^#[0-9a-fA-F]{6}$/.test(val)) applyColor(val);
+                }}
+                onBlur={(e) => {
+                  let val = e.target.value.trim();
+                  if (!val.startsWith('#')) val = '#' + val;
+                  if (/^#[0-9a-fA-F]{6}$/.test(val)) {
+                    applyColor(val);
+                  } else {
+                    e.target.value = color;
+                  }
+                }}
                 className="flex-1 text-xs font-mono bg-muted rounded px-2 py-1 border border-border text-foreground w-20"
                 maxLength={7}
               />
