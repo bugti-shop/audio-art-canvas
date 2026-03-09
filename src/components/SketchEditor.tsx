@@ -670,7 +670,34 @@ interface SketchEditorProps {
   className?: string;
 }
 
-// --- Pen Preview Canvas ---
+// --- Chaikin's corner-cutting smoothing algorithm ---
+const chaikinSmooth = (points: Point[], iterations: number): Point[] => {
+  if (points.length < 3 || iterations <= 0) return points;
+  let pts = points;
+  for (let iter = 0; iter < iterations; iter++) {
+    const smoothed: Point[] = [pts[0]]; // Keep first point
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p0 = pts[i], p1 = pts[i + 1];
+      smoothed.push({
+        x: p0.x * 0.75 + p1.x * 0.25,
+        y: p0.y * 0.75 + p1.y * 0.25,
+        pressure: p0.pressure * 0.75 + p1.pressure * 0.25,
+        ...(p0.timestamp !== undefined ? { timestamp: p0.timestamp } : {}),
+      });
+      smoothed.push({
+        x: p0.x * 0.25 + p1.x * 0.75,
+        y: p0.y * 0.25 + p1.y * 0.75,
+        pressure: p0.pressure * 0.25 + p1.pressure * 0.75,
+        ...(p1.timestamp !== undefined ? { timestamp: p1.timestamp } : {}),
+      });
+    }
+    smoothed.push(pts[pts.length - 1]); // Keep last point
+    pts = smoothed;
+  }
+  return pts;
+};
+
+
 const PenPreviewCanvas = memo(({ penType, isActive, currentColor }: { penType: DrawToolType; isActive: boolean; currentColor: string }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -757,27 +784,13 @@ const PenPreviewCanvas = memo(({ penType, isActive, currentColor }: { penType: D
         break;
       }
       case 'highlighter': {
-        // Live preview: flat transparent band with multiply blend
-        ctx.globalCompositeOperation = 'multiply';
+        // Preview: flat transparent band (no multiply on transparent canvas)
         ctx.lineJoin = 'bevel';
         ctx.lineCap = 'butt';
         const liveHlW = 8;
         ctx.strokeStyle = c;
-        ctx.globalAlpha = 0.3;
+        ctx.globalAlpha = 0.35;
         ctx.lineWidth = liveHlW;
-        ctx.beginPath();
-        points.forEach((pt, i) => {
-          if (i === 0) ctx.moveTo(pt.x, pt.y);
-          else {
-            const prev = points[i - 1];
-            const mx = (prev.x + pt.x) / 2, my = (prev.y + pt.y) / 2;
-            ctx.quadraticCurveTo(prev.x, prev.y, mx, my);
-          }
-        });
-        ctx.stroke();
-        // Subtle center boost
-        ctx.globalAlpha = 0.1;
-        ctx.lineWidth = liveHlW * 0.5;
         ctx.beginPath();
         points.forEach((pt, i) => {
           if (i === 0) ctx.moveTo(pt.x, pt.y);
@@ -1051,6 +1064,7 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
 
   const [tool, setTool] = useState<ToolType>('pen');
   const [color, setColor] = useState('#1a1a1a');
+  const [strokeSmoothing, setStrokeSmoothing] = useState(2); // 0=off, 1-4 iterations
   const [highlightOpacity, setHighlightOpacity] = useState(0.35);
   const [strokeWidth, setStrokeWidth] = useState(3);
   const [toolOpacity, setToolOpacity] = useState(1);
@@ -3703,6 +3717,12 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
       if (layer) {
         const strokeToAdd = finishedStroke;
 
+        // Post-stroke smoothing: apply Chaikin's algorithm to freehand strokes
+        const freehandTools: ToolType[] = ['pencil', 'pen', 'marker', 'highlighter', 'calligraphy', 'fountain', 'crayon', 'watercolor', 'neon'];
+        if (strokeSmoothing > 0 && freehandTools.includes(strokeToAdd.tool) && strokeToAdd.points.length > 4) {
+          strokeToAdd.points = chaikinSmooth(strokeToAdd.points, strokeSmoothing);
+        }
+
         // Stamp stroke with audio timestamp if recording
         if (isAudioRecording && audioRecordingStartRef.current > 0) {
           strokeToAdd.audioTimestamp = Date.now() - audioRecordingStartRef.current;
@@ -3737,7 +3757,7 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
     currentStrokeRef.current = null;
     redrawAll();
     emitChange();
-  }, [redrawAll, emitChange, activeLayerId, tool, symmetryMode, isAudioRecording, isTimelapseRecording, presentationMode, pdfPages, pdfPageIndex]);
+  }, [redrawAll, emitChange, activeLayerId, tool, symmetryMode, isAudioRecording, isTimelapseRecording, presentationMode, pdfPages, pdfPageIndex, strokeSmoothing]);
 
   // --- Presentation mode: fullscreen, keyboard nav, auto-hide cursor ---
   const enterPresentationMode = useCallback(() => {
@@ -6878,6 +6898,14 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
                 >
                   {t('sketch.resetToDefaults')}
                 </button>
+                {/* Stroke Smoothing */}
+                <div className="mt-1">
+                  <div className="flex items-center justify-between mb-0.5">
+                    <span className="text-[9px] text-muted-foreground">{t('sketch.strokeSmoothing', 'Smoothing')}</span>
+                    <span className="text-[9px] font-mono text-muted-foreground">{strokeSmoothing === 0 ? 'Off' : `${strokeSmoothing}x`}</span>
+                  </div>
+                  <Slider min={0} max={4} step={1} value={[strokeSmoothing]} onValueChange={([v]) => setStrokeSmoothing(v)} />
+                </div>
               </div>
             )}
 
