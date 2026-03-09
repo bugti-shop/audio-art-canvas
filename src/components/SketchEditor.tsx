@@ -7720,6 +7720,7 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
               <span className="font-bold">{shapeConfidenceBadge.confidence}%</span>
             </div>
           </motion.div>
+        )}
         {/* Selection floating actions */}
         {hasSelection && tool === 'select' && (
           <div className="absolute top-2 left-2 bg-card/95 backdrop-blur-sm border border-border rounded-lg px-1 py-1 flex items-center gap-0.5">
