@@ -3717,6 +3717,12 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
       if (layer) {
         const strokeToAdd = finishedStroke;
 
+        // Post-stroke smoothing: apply Chaikin's algorithm to freehand strokes
+        const freehandTools: ToolType[] = ['pencil', 'pen', 'marker', 'highlighter', 'calligraphy', 'fountain', 'crayon', 'watercolor', 'neon'];
+        if (strokeSmoothing > 0 && freehandTools.includes(strokeToAdd.tool) && strokeToAdd.points.length > 4) {
+          strokeToAdd.points = chaikinSmooth(strokeToAdd.points, strokeSmoothing);
+        }
+
         // Stamp stroke with audio timestamp if recording
         if (isAudioRecording && audioRecordingStartRef.current > 0) {
           strokeToAdd.audioTimestamp = Date.now() - audioRecordingStartRef.current;
