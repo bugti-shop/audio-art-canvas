@@ -71,7 +71,7 @@ const nativeSignIn = async (): Promise<GoogleUser> => {
     name: name || email,
     picture,
     accessToken,
-    expiresAt: Date.now() + 365 * 24 * 3600 * 1000, // 1 year — effectively never expires
+    expiresAt: Date.now() + 3500 * 1000, // ~1 hour (Google access token lifetime)
   };
 
   await setSetting('googleUser', user);
