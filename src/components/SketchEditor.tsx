@@ -670,7 +670,34 @@ interface SketchEditorProps {
   className?: string;
 }
 
-// --- Pen Preview Canvas ---
+// --- Chaikin's corner-cutting smoothing algorithm ---
+const chaikinSmooth = (points: Point[], iterations: number): Point[] => {
+  if (points.length < 3 || iterations <= 0) return points;
+  let pts = points;
+  for (let iter = 0; iter < iterations; iter++) {
+    const smoothed: Point[] = [pts[0]]; // Keep first point
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p0 = pts[i], p1 = pts[i + 1];
+      smoothed.push({
+        x: p0.x * 0.75 + p1.x * 0.25,
+        y: p0.y * 0.75 + p1.y * 0.25,
+        pressure: p0.pressure * 0.75 + p1.pressure * 0.25,
+        ...(p0.timestamp !== undefined ? { timestamp: p0.timestamp } : {}),
+      });
+      smoothed.push({
+        x: p0.x * 0.25 + p1.x * 0.75,
+        y: p0.y * 0.25 + p1.y * 0.75,
+        pressure: p0.pressure * 0.25 + p1.pressure * 0.75,
+        ...(p1.timestamp !== undefined ? { timestamp: p1.timestamp } : {}),
+      });
+    }
+    smoothed.push(pts[pts.length - 1]); // Keep last point
+    pts = smoothed;
+  }
+  return pts;
+};
+
+
 const PenPreviewCanvas = memo(({ penType, isActive, currentColor }: { penType: DrawToolType; isActive: boolean; currentColor: string }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
