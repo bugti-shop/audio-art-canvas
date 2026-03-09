@@ -3715,6 +3715,9 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
   const [fillEnabled, setFillEnabled] = useState(false);
   const [fillColor, setFillColor] = useState('#3b82f6');
   const [fillOpacity, setFillOpacity] = useState(0.3);
+  const [fillType, setFillType] = useState<'solid' | 'linear-gradient' | 'radial-gradient' | 'stripes' | 'dots' | 'crosshatch'>('solid');
+  const [fillColor2, setFillColor2] = useState('#8b5cf6');
+  const [fillAngle, setFillAngle] = useState(135);
   const [pressureOpacityEnabled, setPressureOpacityEnabled] = useState(false);
 
   // Color palette manager state
