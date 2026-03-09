@@ -3083,10 +3083,26 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
       const dy = point.y - action.startPos.y;
 
       if (action.type === 'body') {
-        // Move
+        // Compute tentative bbox after move
+        const tentativeBBox: BBox = {
+          x: action.origBBox.x + dx,
+          y: action.origBBox.y + dy,
+          w: action.origBBox.w,
+          h: action.origBBox.h,
+        };
+        const zoom = zoomRef.current;
+        const pan = panRef.current;
+        const { w: cw, h: ch } = canvasSizeRef.current;
+        const vBounds = { vx0: -pan.x / zoom, vy0: -pan.y / zoom, vx1: (-pan.x + cw) / zoom, vy1: (-pan.y + ch) / zoom };
+        const edges = collectAlignmentEdges(new Set(selectedIndices));
+        const snapDelta = computeAlignmentSnap(tentativeBBox, edges, vBounds);
+        const sdx = dx + snapDelta.dx;
+        const sdy = dy + snapDelta.dy;
+
+        // Move with snapped delta
         const transformed = action.origStrokes.map(s => ({
           ...s,
-          points: s.points.map(p => ({ ...p, x: p.x + dx, y: p.y + dy })),
+          points: s.points.map(p => ({ ...p, x: p.x + sdx, y: p.y + sdy })),
         }));
         for (let i = 0; i < selectedIndices.length; i++) {
           if (selectedIndices[i] < layer.strokes.length) {
