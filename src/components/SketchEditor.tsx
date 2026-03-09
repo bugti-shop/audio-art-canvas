@@ -1810,6 +1810,61 @@ const convertToCleanShape = (stroke: Stroke, shape: RecognizedShape): Stroke | n
           { x: shape.cx + shape.rx, y: shape.cy + shape.ry, pressure },
         ],
       };
+    case 'moon':
+      return {
+        ...stroke,
+        tool: 'moon',
+        points: [
+          { x: shape.cx - shape.r, y: shape.cy - shape.r, pressure },
+          { x: shape.cx + shape.r, y: shape.cy + shape.r, pressure },
+        ],
+      };
+    case 'cloud':
+      return {
+        ...stroke,
+        tool: 'cloud',
+        points: [
+          { x: shape.cx - shape.rx, y: shape.cy - shape.ry, pressure },
+          { x: shape.cx + shape.rx, y: shape.cy + shape.ry, pressure },
+        ],
+      };
+    case 'speechBubble':
+      return {
+        ...stroke,
+        tool: 'speechBubble',
+        points: [
+          { x: shape.x, y: shape.y, pressure },
+          { x: shape.x + shape.w, y: shape.y + shape.h, pressure },
+        ],
+      };
+    case 'cylinder':
+      return {
+        ...stroke,
+        tool: 'cylinder',
+        points: [
+          { x: shape.x, y: shape.y, pressure },
+          { x: shape.x + shape.w, y: shape.y + shape.h, pressure },
+        ],
+      };
+    case 'cone':
+      return {
+        ...stroke,
+        tool: 'cone',
+        points: [
+          { x: shape.cx - shape.rx, y: shape.cy - shape.ry, pressure },
+          { x: shape.cx + shape.rx, y: shape.cy + shape.ry, pressure },
+        ],
+      };
+    case 'cross':
+      // Map cross to a rectangle with a plus shape — use diamond as closest tool
+      return {
+        ...stroke,
+        tool: 'rect',
+        points: [
+          { x: shape.cx - shape.rx, y: shape.cy - shape.ry, pressure },
+          { x: shape.cx + shape.rx, y: shape.cy + shape.ry, pressure },
+        ],
+      };
   }
 };
 
