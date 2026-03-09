@@ -1285,7 +1285,7 @@ const getPolygonArea = (points: Point[]): number => {
   return Math.abs(area) / 2;
 };
 
-type RecognizedShape = 
+type RecognizedShapeData = 
   | { type: 'line'; x1: number; y1: number; x2: number; y2: number }
   | { type: 'rect'; x: number; y: number; w: number; h: number }
   | { type: 'square'; x: number; y: number; size: number }
@@ -1303,10 +1303,16 @@ type RecognizedShape =
   | { type: 'speechBubble'; x: number; y: number; w: number; h: number }
   | { type: 'cylinder'; x: number; y: number; w: number; h: number }
   | { type: 'cone'; cx: number; cy: number; rx: number; ry: number }
-  | { type: 'cross'; cx: number; cy: number; rx: number; ry: number }
-  | null;
+  | { type: 'cross'; cx: number; cy: number; rx: number; ry: number };
 
-const recognizeShape = (points: Point[]): RecognizedShape => {
+type RecognizedShape = RecognizedShapeData | null;
+
+interface ShapeRecognitionResult {
+  shape: RecognizedShapeData;
+  confidence: number; // 0-100
+}
+
+const recognizeShape = (points: Point[]): ShapeRecognitionResult | null => {
   if (points.length < 5) return null;
 
   const first = points[0];
