@@ -1525,12 +1525,12 @@ const recognizeShape = (points: Point[]): RecognizedShape => {
     }
     circleErrCheck = Math.sqrt(circleErrCheck / points.length);
     // Moon: roughly circular but with a concave bite on one side
-    if (circleErrCheck < 0.35 && circleErrCheck > 0.15) {
+    if (circleErrCheck < 0.3 && circleErrCheck > 0.14 && circularity > 0.45 && circularity < 0.82) {
       // Check for asymmetric density (one half has fewer points)
       const leftPoints = points.filter(p => p.x < cx).length;
       const rightPoints = points.filter(p => p.x >= cx).length;
       const ratio = Math.min(leftPoints, rightPoints) / Math.max(leftPoints, rightPoints);
-      if (ratio < 0.6) {
+      if (ratio < 0.5) {
         const r = Math.max(rx, ry);
         return { type: 'moon', cx, cy, r };
       }
