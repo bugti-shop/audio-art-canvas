@@ -5,36 +5,58 @@ const DRIVE_API = 'https://www.googleapis.com/drive/v3';
 const DRIVE_UPLOAD_API = 'https://www.googleapis.com/upload/drive/v3';
 const APP_FOLDER_NAME = 'NPD_Sync_Data';
 
-// Helper: fetch with automatic 401 retry (refresh token and retry once)
-const driveApiFetch = async (url: string, options: RequestInit = {}): Promise<Response> => {
-  const token = await getValidAccessToken();
-  if (!token) throw new Error('Not authenticated');
+const RETRIABLE_STATUS = new Set([429, 500, 502, 503, 504]);
 
-  const res = await fetch(url, {
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+const fetchWithToken = (url: string, options: RequestInit, token: string) =>
+  fetch(url, {
     ...options,
     headers: { ...options.headers, Authorization: `Bearer ${token}` },
   });
 
-  if (res.status === 401) {
-    // Token was rejected — try one silent refresh + single retry
-    try {
-      const refreshed = await refreshGoogleToken();
-      const retryRes = await fetch(url, {
-        ...options,
-        headers: { ...options.headers, Authorization: `Bearer ${refreshed.accessToken}` },
-      });
+// Helper: fetch with automatic retry for 401 + transient failures
+const driveApiFetch = async (url: string, options: RequestInit = {}): Promise<Response> => {
+  let token = await getValidAccessToken();
+  if (!token) throw new Error('Not authenticated');
 
-      if (retryRes.status === 401) {
-        throw new Error('Authentication expired. Please sign in again.');
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await fetchWithToken(url, options, token);
+
+      if (res.status === 401) {
+        try {
+          const refreshed = await refreshGoogleToken();
+          token = refreshed.accessToken;
+          if (attempt < 2) {
+            await sleep(250 * (attempt + 1));
+            continue;
+          }
+          throw new Error('Authentication expired. Please sign in again.');
+        } catch {
+          throw new Error('Authentication expired. Please sign in again.');
+        }
       }
 
-      return retryRes;
-    } catch {
-      throw new Error('Authentication expired. Please sign in again.');
+      if (RETRIABLE_STATUS.has(res.status) && attempt < 2) {
+        await sleep(400 * (attempt + 1));
+        continue;
+      }
+
+      return res;
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('Authentication expired')) {
+        throw error;
+      }
+      if (attempt < 2) {
+        await sleep(400 * (attempt + 1));
+        continue;
+      }
+      throw new Error('Network issue during sync. Please try again.');
     }
   }
 
-  return res;
+  throw new Error('Sync request failed.');
 };
 
 // Get or create the app data folder in Drive
