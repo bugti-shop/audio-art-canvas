@@ -1892,6 +1892,80 @@ const hexToRgba = (hex: string, alpha: number): string => {
   return `rgba(${r},${g},${b},${alpha})`;
 };
 
+const createShapeFillStyle = (
+  ctx: CanvasRenderingContext2D,
+  stroke: Stroke,
+  x: number, y: number, w: number, h: number,
+): string | CanvasGradient | CanvasPattern | null => {
+  const ft = stroke.fillType || 'solid';
+  const c1 = stroke.fillColor || '#3b82f6';
+  const c2 = stroke.fillColor2 || '#8b5cf6';
+  const opacity = stroke.fillOpacity ?? 0.3;
+  const angle = stroke.fillAngle ?? 0;
+
+  switch (ft) {
+    case 'solid':
+      return hexToRgba(c1, opacity);
+    case 'linear-gradient': {
+      const rad = (angle * Math.PI) / 180;
+      const cx = x + w / 2, cy = y + h / 2;
+      const len = Math.max(w, h) / 2;
+      const grad = ctx.createLinearGradient(
+        cx - Math.cos(rad) * len, cy - Math.sin(rad) * len,
+        cx + Math.cos(rad) * len, cy + Math.sin(rad) * len,
+      );
+      grad.addColorStop(0, hexToRgba(c1, opacity));
+      grad.addColorStop(1, hexToRgba(c2, opacity));
+      return grad;
+    }
+    case 'radial-gradient': {
+      const cx = x + w / 2, cy = y + h / 2;
+      const r = Math.max(w, h) / 2;
+      const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+      grad.addColorStop(0, hexToRgba(c1, opacity));
+      grad.addColorStop(1, hexToRgba(c2, opacity));
+      return grad;
+    }
+    case 'stripes': {
+      const patCanvas = document.createElement('canvas');
+      const s = 12;
+      patCanvas.width = s; patCanvas.height = s;
+      const pCtx = patCanvas.getContext('2d')!;
+      pCtx.fillStyle = hexToRgba(c1, opacity * 0.3);
+      pCtx.fillRect(0, 0, s, s);
+      pCtx.strokeStyle = hexToRgba(c1, opacity);
+      pCtx.lineWidth = 3;
+      pCtx.beginPath(); pCtx.moveTo(0, s); pCtx.lineTo(s, 0); pCtx.stroke();
+      return ctx.createPattern(patCanvas, 'repeat');
+    }
+    case 'dots': {
+      const patCanvas = document.createElement('canvas');
+      const s = 12;
+      patCanvas.width = s; patCanvas.height = s;
+      const pCtx = patCanvas.getContext('2d')!;
+      pCtx.fillStyle = hexToRgba(c1, opacity * 0.2);
+      pCtx.fillRect(0, 0, s, s);
+      pCtx.fillStyle = hexToRgba(c1, opacity);
+      pCtx.beginPath(); pCtx.arc(s / 2, s / 2, 2, 0, Math.PI * 2); pCtx.fill();
+      return ctx.createPattern(patCanvas, 'repeat');
+    }
+    case 'crosshatch': {
+      const patCanvas = document.createElement('canvas');
+      const s = 10;
+      patCanvas.width = s; patCanvas.height = s;
+      const pCtx = patCanvas.getContext('2d')!;
+      pCtx.fillStyle = hexToRgba(c1, opacity * 0.15);
+      pCtx.fillRect(0, 0, s, s);
+      pCtx.strokeStyle = hexToRgba(c1, opacity * 0.8);
+      pCtx.lineWidth = 1;
+      pCtx.beginPath(); pCtx.moveTo(0, s); pCtx.lineTo(s, 0); pCtx.stroke();
+      pCtx.beginPath(); pCtx.moveTo(0, 0); pCtx.lineTo(s, s); pCtx.stroke();
+      return ctx.createPattern(patCanvas, 'repeat');
+    }
+  }
+  return null;
+};
+
 const hslToHex = (h: number, s: number, l: number): string => {
   const a = s * Math.min(l, 1 - l);
   const f = (n: number) => {
