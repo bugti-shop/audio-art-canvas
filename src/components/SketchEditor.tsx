@@ -3789,6 +3789,7 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
 
   // Shape recognition state
   const [shapeRecognitionEnabled, setShapeRecognitionEnabled] = useState(true);
+  const [shapeConfidenceBadge, setShapeConfidenceBadge] = useState<{ label: string; confidence: number; x: number; y: number } | null>(null);
 
   // SVG import ref
   const svgInputRef = useRef<HTMLInputElement>(null);
