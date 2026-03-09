@@ -1600,7 +1600,7 @@ const recognizeShape = (points: Point[]): RecognizedShape => {
     const vBand = points.filter(p => Math.abs(p.x - cx) < rx * 0.35);
     const hRatio = hBand.length / points.length;
     const vRatio = vBand.length / points.length;
-    if (hRatio > 0.3 && vRatio > 0.3 && hRatio + vRatio > 0.7) {
+    if (numCorners >= 8 && hRatio > 0.33 && vRatio > 0.33 && hRatio + vRatio > 0.8) {
       return { type: 'cross', cx, cy, rx, ry };
     }
   }
