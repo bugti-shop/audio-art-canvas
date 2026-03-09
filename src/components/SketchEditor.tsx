@@ -757,27 +757,13 @@ const PenPreviewCanvas = memo(({ penType, isActive, currentColor }: { penType: D
         break;
       }
       case 'highlighter': {
-        // Live preview: flat transparent band with multiply blend
-        ctx.globalCompositeOperation = 'multiply';
+        // Preview: flat transparent band (no multiply on transparent canvas)
         ctx.lineJoin = 'bevel';
         ctx.lineCap = 'butt';
         const liveHlW = 8;
         ctx.strokeStyle = c;
-        ctx.globalAlpha = 0.3;
+        ctx.globalAlpha = 0.35;
         ctx.lineWidth = liveHlW;
-        ctx.beginPath();
-        points.forEach((pt, i) => {
-          if (i === 0) ctx.moveTo(pt.x, pt.y);
-          else {
-            const prev = points[i - 1];
-            const mx = (prev.x + pt.x) / 2, my = (prev.y + pt.y) / 2;
-            ctx.quadraticCurveTo(prev.x, prev.y, mx, my);
-          }
-        });
-        ctx.stroke();
-        // Subtle center boost
-        ctx.globalAlpha = 0.1;
-        ctx.lineWidth = liveHlW * 0.5;
         ctx.beginPath();
         points.forEach((pt, i) => {
           if (i === 0) ctx.moveTo(pt.x, pt.y);
