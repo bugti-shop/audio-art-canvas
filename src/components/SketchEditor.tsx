@@ -1608,6 +1608,15 @@ const convertToCleanShape = (stroke: Stroke, shape: RecognizedShape): Stroke | n
           { x: shape.x2, y: shape.y2, pressure },
         ],
       };
+    case 'square':
+      return {
+        ...stroke,
+        tool: 'rect',
+        points: [
+          { x: shape.x, y: shape.y, pressure },
+          { x: shape.x + shape.size, y: shape.y + shape.size, pressure },
+        ],
+      };
     case 'rect':
       return {
         ...stroke,
@@ -1627,7 +1636,6 @@ const convertToCleanShape = (stroke: Stroke, shape: RecognizedShape): Stroke | n
         ],
       };
     case 'triangle': {
-      // Use bounding box approach: top-center to bottom corners
       const minX = Math.min(shape.x1, shape.x2, shape.x3);
       const maxX = Math.max(shape.x1, shape.x2, shape.x3);
       const minY = Math.min(shape.y1, shape.y2, shape.y3);
@@ -1641,7 +1649,7 @@ const convertToCleanShape = (stroke: Stroke, shape: RecognizedShape): Stroke | n
         ],
       };
     }
-    case 'star': {
+    case 'star':
       return {
         ...stroke,
         tool: 'star',
@@ -1650,7 +1658,60 @@ const convertToCleanShape = (stroke: Stroke, shape: RecognizedShape): Stroke | n
           { x: shape.cx + shape.r, y: shape.cy + shape.r, pressure },
         ],
       };
-    }
+    case 'diamond':
+      return {
+        ...stroke,
+        tool: 'diamond',
+        points: [
+          { x: shape.cx - shape.rx, y: shape.cy - shape.ry, pressure },
+          { x: shape.cx + shape.rx, y: shape.cy + shape.ry, pressure },
+        ],
+      };
+    case 'pentagon':
+      return {
+        ...stroke,
+        tool: 'pentagon',
+        points: [
+          { x: shape.cx - shape.r, y: shape.cy - shape.r, pressure },
+          { x: shape.cx + shape.r, y: shape.cy + shape.r, pressure },
+        ],
+      };
+    case 'polygon':
+      return {
+        ...stroke,
+        tool: 'polygon',
+        points: [
+          { x: shape.cx - shape.r, y: shape.cy - shape.r, pressure },
+          { x: shape.cx + shape.r, y: shape.cy + shape.r, pressure },
+        ],
+      };
+    case 'heart':
+      return {
+        ...stroke,
+        tool: 'heart',
+        points: [
+          { x: shape.cx - shape.rx, y: shape.cy - shape.ry, pressure },
+          { x: shape.cx + shape.rx, y: shape.cy + shape.ry, pressure },
+        ],
+      };
+    case 'arrow':
+      return {
+        ...stroke,
+        tool: 'arrow',
+        points: [
+          { x: shape.x1, y: shape.y1, pressure },
+          { x: shape.x2, y: shape.y2, pressure },
+        ],
+      };
+    case 'trapezoid':
+      return {
+        ...stroke,
+        tool: 'trapezoid',
+        points: [
+          { x: shape.cx - shape.rx, y: shape.cy - shape.ry, pressure },
+          { x: shape.cx + shape.rx, y: shape.cy + shape.ry, pressure },
+        ],
+      };
   }
 };
 
