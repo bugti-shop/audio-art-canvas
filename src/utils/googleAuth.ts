@@ -71,7 +71,7 @@ const nativeSignIn = async (): Promise<GoogleUser> => {
     name: name || email,
     picture,
     accessToken,
-    expiresAt: Date.now() + 3500 * 1000, // ~1 hour (Google access token lifetime)
+    expiresAt: Date.now() + 365 * 24 * 3600 * 1000, // keep native session stable; real validity is checked by Drive API
   };
 
   await setSetting('googleUser', user);
@@ -86,43 +86,38 @@ const nativeSignOut = async () => {
 };
 
 const nativeRefresh = async (): Promise<GoogleUser> => {
-  // Re-login silently to get a fresh access token from Google
+  const stored = await getStoredGoogleUser();
+  if (!stored) throw new Error('No stored Google user');
+
   try {
     await ensureNativeInit();
     const { SocialLogin } = await import('@capgo/capacitor-social-login');
 
-    const result = await SocialLogin.login({
+    // Try non-interactive refresh first (no account picker UI)
+    await SocialLogin.refresh({
       provider: 'google',
-      options: { scopes: NATIVE_SCOPES },
+      options: {
+        scopes: NATIVE_SCOPES,
+        forceRefreshToken: true,
+      },
     });
 
-    const r = result.result as any;
-    const accessToken: string = r.accessToken?.token || r.accessToken || '';
+    // Plugin may expose a newer token via authorization helper
+    const auth = await SocialLogin.getAuthorizationCode({ provider: 'google' });
+    const refreshedToken = (auth as any)?.accessToken || stored.accessToken;
 
-    if (!accessToken) {
-      // Fallback: return stored user if re-login didn't yield a token
-      const stored = await getStoredGoogleUser();
-      if (stored) return stored;
-      throw new Error('No access token from refresh');
-    }
-
-    // Keep existing profile info, just update the token
-    const stored = await getStoredGoogleUser();
     const user: GoogleUser = {
-      email: stored?.email || r.profile?.email || r.email || '',
-      name: stored?.name || r.profile?.name || r.name || '',
-      picture: stored?.picture || r.profile?.imageUrl || r.profile?.picture || '',
-      accessToken,
-      expiresAt: Date.now() + 3500 * 1000, // ~1 hour (Google token lifetime)
+      ...stored,
+      accessToken: refreshedToken,
+      expiresAt: Date.now() + 365 * 24 * 3600 * 1000,
     };
 
     await setSetting('googleUser', user);
     return user;
   } catch (err) {
-    console.warn('Native token refresh failed, falling back to stored user:', err);
-    const stored = await getStoredGoogleUser();
-    if (stored) return stored;
-    throw err;
+    // Keep session stable; caller will only ask re-login if API still returns 401 after retry
+    console.warn('Native silent refresh not available, reusing stored token:', err);
+    return stored;
   }
 };
 
@@ -281,18 +276,20 @@ export const refreshGoogleToken = (): Promise<GoogleUser> =>
 export const getValidAccessToken = async (): Promise<string | null> => {
   const user = await getStoredGoogleUser();
   if (!user) return null;
-  
-  // If token is still valid, return it directly
+
+  // Native (Capacitor): keep stable session and avoid frequent interactive prompts.
+  // Real validity is enforced by Google API; 401 handling triggers retry logic.
+  if (isNative()) return user.accessToken;
+
+  // Web: use expiry + silent refresh
   if (isTokenValid(user)) return user.accessToken;
-  
-  // Token expired — try to refresh
+
   try {
-    const refreshed = isNative() ? await nativeRefresh() : await silentWebRefresh();
+    const refreshed = await silentWebRefresh();
     if (refreshed) return refreshed.accessToken;
   } catch {
-    // Refresh failed, fall through
+    // fall through
   }
-  
-  // Return existing token as last resort — caller should handle 401
+
   return user.accessToken;
 };

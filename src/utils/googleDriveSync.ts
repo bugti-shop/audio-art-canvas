@@ -16,13 +16,18 @@ const driveApiFetch = async (url: string, options: RequestInit = {}): Promise<Re
   });
 
   if (res.status === 401) {
-    // Token was rejected — force refresh and retry once
+    // Token was rejected — try one silent refresh + single retry
     try {
       const refreshed = await refreshGoogleToken();
       const retryRes = await fetch(url, {
         ...options,
         headers: { ...options.headers, Authorization: `Bearer ${refreshed.accessToken}` },
       });
+
+      if (retryRes.status === 401) {
+        throw new Error('Authentication expired. Please sign in again.');
+      }
+
       return retryRes;
     } catch {
       throw new Error('Authentication expired. Please sign in again.');
