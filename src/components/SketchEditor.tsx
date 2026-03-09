@@ -3737,7 +3737,7 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
     currentStrokeRef.current = null;
     redrawAll();
     emitChange();
-  }, [redrawAll, emitChange, activeLayerId, tool, symmetryMode, isAudioRecording, isTimelapseRecording, shapeRecognitionEnabled, presentationMode, pdfPages, pdfPageIndex]);
+  }, [redrawAll, emitChange, activeLayerId, tool, symmetryMode, isAudioRecording, isTimelapseRecording, presentationMode, pdfPages, pdfPageIndex]);
 
   // --- Presentation mode: fullscreen, keyboard nav, auto-hide cursor ---
   const enterPresentationMode = useCallback(() => {
