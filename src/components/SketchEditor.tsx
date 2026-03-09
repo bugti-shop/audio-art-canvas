@@ -2268,7 +2268,25 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
     return {
       x: wx,
       y: wy,
-      pressure: e.pressure > 0 ? e.pressure : 0.5,
+      pressure: (() => {
+        const rawP = e.pressure > 0 ? e.pressure : 0.5;
+        // Apply pressure curve: cubic bezier from (0,0) to (1,1) with control points
+        const [cx1, cy1, cx2, cy2] = pressureCurveRef.current;
+        // Newton's method to solve bezier x(t) = rawP for t, then return y(t)
+        let t = rawP; // initial guess
+        for (let i = 0; i < 8; i++) {
+          const t2 = t * t, t3 = t2 * t;
+          const mt = 1 - t, mt2 = mt * mt, mt3 = mt2 * mt;
+          const xAt = mt3 * 0 + 3 * mt2 * t * cx1 + 3 * mt * t2 * cx2 + t3 * 1;
+          const dxdt = 3 * mt2 * cx1 + 6 * mt * t * (cx2 - cx1) + 3 * t2 * (1 - cx2);
+          if (Math.abs(dxdt) < 1e-6) break;
+          t -= (xAt - rawP) / dxdt;
+          t = Math.max(0, Math.min(1, t));
+        }
+        const t2 = t * t, t3 = t2 * t;
+        const mt = 1 - t, mt2 = mt * mt, mt3 = mt2 * mt;
+        return Math.max(0.01, Math.min(1, mt3 * 0 + 3 * mt2 * t * cy1 + 3 * mt * t2 * cy2 + t3 * 1));
+      })(),
       timestamp: e.timeStamp,
     };
   };
