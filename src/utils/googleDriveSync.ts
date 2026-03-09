@@ -1,21 +1,44 @@
 // Google Drive API utilities for app data folder sync
-import { getValidAccessToken } from './googleAuth';
+import { getValidAccessToken, refreshGoogleToken } from './googleAuth';
 
 const DRIVE_API = 'https://www.googleapis.com/drive/v3';
 const DRIVE_UPLOAD_API = 'https://www.googleapis.com/upload/drive/v3';
 const APP_FOLDER_NAME = 'NPD_Sync_Data';
 
-// Get or create the app data folder in Drive
-export const getOrCreateAppFolder = async (): Promise<string> => {
+// Helper: fetch with automatic 401 retry (refresh token and retry once)
+const driveApiFetch = async (url: string, options: RequestInit = {}): Promise<Response> => {
   const token = await getValidAccessToken();
   if (!token) throw new Error('Not authenticated');
 
+  const res = await fetch(url, {
+    ...options,
+    headers: { ...options.headers, Authorization: `Bearer ${token}` },
+  });
+
+  if (res.status === 401) {
+    // Token was rejected — force refresh and retry once
+    try {
+      const refreshed = await refreshGoogleToken();
+      const retryRes = await fetch(url, {
+        ...options,
+        headers: { ...options.headers, Authorization: `Bearer ${refreshed.accessToken}` },
+      });
+      return retryRes;
+    } catch {
+      throw new Error('Authentication expired. Please sign in again.');
+    }
+  }
+
+  return res;
+};
+
+// Get or create the app data folder in Drive
+export const getOrCreateAppFolder = async (): Promise<string> => {
   // Search for existing folder
-  const searchRes = await fetch(
+  const searchRes = await driveApiFetch(
     `${DRIVE_API}/files?q=${encodeURIComponent(
       `name='${APP_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`
-    )}&spaces=drive&fields=files(id,name)`,
-    { headers: { Authorization: `Bearer ${token}` } }
+    )}&spaces=drive&fields=files(id,name)`
   );
 
   if (!searchRes.ok) throw new Error(`Drive search failed: ${searchRes.status}`);
