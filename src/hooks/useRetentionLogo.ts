@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { getSetting, setSetting } from '@/utils/settingsStorage';
+import { setLauncherIcon } from '@/utils/dynamicIcon';
 import defaultLogo from '@/assets/app-logo.png';
 import sadLogo from '@/assets/sad-logo.png';
 import angryLogo from '@/assets/angry-logo.png';
@@ -13,20 +14,11 @@ export type RetentionMood = 'default' | 'sad' | 'angry';
 export interface RetentionLogoResult {
   logo: string;
   mood: RetentionMood;
-  /** How many days the user was absent (0 = active) */
   daysAway: number;
-  /** True on this session if the user was away 1+ days */
   isReturning: boolean;
-  /** Call to dismiss the returning state and reset to default */
   acknowledgeReturn: () => void;
 }
 
-/**
- * Retention logos:
- * - 1 day away → sad logo shown until user opens app (then resets to default)
- * - 2+ days away → angry/crash logo shown until user opens app (then resets to default)
- * - Active user → default logo
- */
 export const useRetentionLogo = (): RetentionLogoResult => {
   const [logo, setLogo] = useState(defaultLogo);
   const [mood, setMood] = useState<RetentionMood>('default');
@@ -47,10 +39,17 @@ export const useRetentionLogo = (): RetentionLogoResult => {
           setLogo(angryLogo);
           setMood('angry');
           setIsReturning(true);
+          // Update Android launcher icon to angry
+          setLauncherIcon('angry');
         } else if (elapsed >= ONE_DAY_MS) {
           setLogo(sadLogo);
           setMood('sad');
           setIsReturning(true);
+          // Update Android launcher icon to sad
+          setLauncherIcon('sad');
+        } else {
+          // Active user — ensure launcher icon is default
+          setLauncherIcon('default');
         }
       }
 
@@ -65,6 +64,8 @@ export const useRetentionLogo = (): RetentionLogoResult => {
     setMood('default');
     setIsReturning(false);
     setDaysAway(0);
+    // Reset launcher icon back to default
+    setLauncherIcon('default');
   };
 
   return { logo, mood, daysAway, isReturning, acknowledgeReturn };

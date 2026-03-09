@@ -158,3 +158,195 @@ Add these to your `android/app/build.gradle`:
 ```
 
 ---
+
+## Dynamic Launcher Icon (Retention Feature)
+
+This feature changes the app's home screen icon based on how long the user has been away:
+- **Default**: Normal pencil icon
+- **1 day away**: Sad pencil icon
+- **2+ days away**: Angry pencil icon
+
+### Step 1: Add Icon Assets
+
+Place your icon variants in the Android mipmap folders:
+
+```
+android/app/src/main/res/
+├── mipmap-hdpi/
+│   ├── ic_launcher.png          (default)
+│   ├── ic_launcher_sad.png      (sad variant)
+│   └── ic_launcher_angry.png    (angry variant)
+├── mipmap-mdpi/
+│   └── ... (same 3 files)
+├── mipmap-xhdpi/
+│   └── ... (same 3 files)
+├── mipmap-xxhdpi/
+│   └── ... (same 3 files)
+└── mipmap-xxxhdpi/
+    └── ... (same 3 files)
+```
+
+Generate icons from your PNG sources using Android Studio → **Image Asset** tool, or use https://icon.kitchen.
+
+### Step 2: AndroidManifest.xml — Activity Aliases
+
+Add these **after** your `</activity>` closing tag, inside `<application>`:
+
+```xml
+<!-- Default Icon (enabled by default) -->
+<activity-alias
+    android:name=".DefaultIcon"
+    android:targetActivity=".MainActivity"
+    android:icon="@mipmap/ic_launcher"
+    android:roundIcon="@mipmap/ic_launcher_round"
+    android:label="Npd"
+    android:enabled="true"
+    android:exported="true">
+    <intent-filter>
+        <action android:name="android.intent.action.MAIN" />
+        <category android:name="android.intent.category.LAUNCHER" />
+    </intent-filter>
+</activity-alias>
+
+<!-- Sad Icon (1 day away) -->
+<activity-alias
+    android:name=".SadIcon"
+    android:targetActivity=".MainActivity"
+    android:icon="@mipmap/ic_launcher_sad"
+    android:roundIcon="@mipmap/ic_launcher_sad_round"
+    android:label="Npd"
+    android:enabled="false"
+    android:exported="true">
+    <intent-filter>
+        <action android:name="android.intent.action.MAIN" />
+        <category android:name="android.intent.category.LAUNCHER" />
+    </intent-filter>
+</activity-alias>
+
+<!-- Angry Icon (2+ days away) -->
+<activity-alias
+    android:name=".AngryIcon"
+    android:targetActivity=".MainActivity"
+    android:icon="@mipmap/ic_launcher_angry"
+    android:roundIcon="@mipmap/ic_launcher_angry_round"
+    android:label="Npd"
+    android:enabled="false"
+    android:exported="true">
+    <intent-filter>
+        <action android:name="android.intent.action.MAIN" />
+        <category android:name="android.intent.category.LAUNCHER" />
+    </intent-filter>
+</activity-alias>
+```
+
+**IMPORTANT:** Remove the `<intent-filter>` with `MAIN/LAUNCHER` from your original `<activity>` tag — the aliases handle it now.
+
+### Step 3: Create the Native Plugin
+
+**File:** `android/app/src/main/java/nota/npd/com/DynamicIconPlugin.java`
+
+```java
+package nota.npd.com;
+
+import android.content.ComponentName;
+import android.content.pm.PackageManager;
+import com.getcapacitor.Plugin;
+import com.getcapacitor.PluginCall;
+import com.getcapacitor.PluginMethod;
+import com.getcapacitor.annotation.CapacitorPlugin;
+
+@CapacitorPlugin(name = "DynamicIcon")
+public class DynamicIconPlugin extends Plugin {
+
+    private static final String TAG = "DynamicIcon";
+    
+    private static final String[] ALIASES = {
+        "nota.npd.com.DefaultIcon",
+        "nota.npd.com.SadIcon",
+        "nota.npd.com.AngryIcon"
+    };
+
+    @PluginMethod()
+    public void setIcon(PluginCall call) {
+        String iconName = call.getString("name", "default");
+        
+        int enableIndex;
+        switch (iconName) {
+            case "sad":
+                enableIndex = 1;
+                break;
+            case "angry":
+                enableIndex = 2;
+                break;
+            default:
+                enableIndex = 0;
+                break;
+        }
+
+        PackageManager pm = getContext().getPackageManager();
+
+        for (int i = 0; i < ALIASES.length; i++) {
+            int state = (i == enableIndex)
+                ? PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+                : PackageManager.COMPONENT_ENABLED_STATE_DISABLED;
+
+            pm.setComponentEnabledSetting(
+                new ComponentName(getContext(), ALIASES[i]),
+                state,
+                PackageManager.DONT_KILL_APP
+            );
+        }
+
+        call.resolve();
+    }
+
+    @PluginMethod()
+    public void getIcon(PluginCall call) {
+        PackageManager pm = getContext().getPackageManager();
+        String current = "default";
+
+        for (int i = 0; i < ALIASES.length; i++) {
+            int state = pm.getComponentEnabledSetting(
+                new ComponentName(getContext(), ALIASES[i])
+            );
+            if (state == PackageManager.COMPONENT_ENABLED_STATE_ENABLED) {
+                switch (i) {
+                    case 1: current = "sad"; break;
+                    case 2: current = "angry"; break;
+                    default: current = "default"; break;
+                }
+                break;
+            }
+        }
+
+        call.resolve(new com.getcapacitor.JSObject().put("name", current));
+    }
+}
+```
+
+### Step 4: Register Plugin in MainActivity
+
+Add this to `MainActivity.java`:
+
+```java
+import nota.npd.com.DynamicIconPlugin;
+
+// Inside onCreate or at class level:
+@Override
+public void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    registerPlugin(DynamicIconPlugin.class);
+}
+```
+
+### Step 5: JS Integration
+
+The web-side code is in `src/utils/dynamicIcon.ts` — it calls the native plugin and falls back gracefully on web.
+
+### Notes
+
+- Icon change takes **1-2 seconds** to reflect on home screen
+- Some launchers may show a brief "app info changed" toast
+- The `DONT_KILL_APP` flag prevents the app from being killed during the switch
+- On web/PWA this feature is a no-op (graceful fallback)
+
