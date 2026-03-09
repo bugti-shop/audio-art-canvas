@@ -3861,13 +3861,144 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
     }
   }, [nativeSaveAndShare, pdfPages, pdfPageIndex, pdfPageDimensions, pdfAnnotations, getOrLoadImage]);
 
-  const handleDownloadPng = useCallback(async () => {
+  const handleDownloadPng = useCallback(async (resolution: number = 1) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const dataUrl = canvas.toDataURL('image/png');
+
+    if (resolution === 1) {
+      // 1x: use current canvas directly
+      const dataUrl = canvas.toDataURL('image/png');
+      const base64 = dataUrl.split(',')[1];
+      await nativeSaveAndShare(base64, 'sketch.png', 'image/png');
+      return;
+    }
+
+    // High-DPI export: render to offscreen canvas at multiplied resolution
+    const { w, h } = canvasSizeRef.current;
+    const offW = Math.round(w * resolution);
+    const offH = Math.round(h * resolution);
+    const offscreen = document.createElement('canvas');
+    offscreen.width = offW;
+    offscreen.height = offH;
+    const offCtx = offscreen.getContext('2d');
+    if (!offCtx) return;
+
+    toast.loading(t('sketch.exportingHighRes', { resolution: `${resolution}x` }), { id: 'hires-export' });
+
+    offCtx.setTransform(resolution, 0, 0, resolution, 0, 0);
+    offCtx.imageSmoothingEnabled = true;
+    offCtx.imageSmoothingQuality = 'high';
+    offCtx.clearRect(0, 0, w, h);
+
+    const zoom = zoomRef.current;
+    const pan = panRef.current;
+    offCtx.save();
+    offCtx.translate(pan.x, pan.y);
+    offCtx.scale(zoom, zoom);
+
+    // Background
+    const vx0 = -pan.x / zoom;
+    const vy0 = -pan.y / zoom;
+    const vx1 = vx0 + w / zoom;
+    const vy1 = vy0 + h / zoom;
+    drawBackground(offCtx, vx0, vy0, vx1, vy1, background, gridColor, gridOpacity);
+
+    // Render layers
+    for (const layer of layersRef.current) {
+      if (!layer.visible) continue;
+      const hasEraser = layer.strokes.some(s => s.tool === 'eraser');
+
+      if (hasEraser) {
+        const layerCanvas = document.createElement('canvas');
+        layerCanvas.width = offW;
+        layerCanvas.height = offH;
+        const lCtx = layerCanvas.getContext('2d')!;
+        lCtx.setTransform(resolution, 0, 0, resolution, 0, 0);
+        lCtx.imageSmoothingEnabled = true;
+        lCtx.imageSmoothingQuality = 'high';
+        lCtx.translate(pan.x, pan.y);
+        lCtx.scale(zoom, zoom);
+        for (const stroke of layer.strokes) drawStroke(lCtx, stroke);
+        for (const ta of (layer.textAnnotations || [])) {
+          lCtx.save();
+          lCtx.font = `${ta.italic ? 'italic ' : ''}${ta.bold ? 'bold ' : ''}${ta.fontSize}px ${ta.font}`;
+          lCtx.fillStyle = ta.color;
+          lCtx.textBaseline = 'top';
+          ta.text.split('\n').forEach((line, li) => lCtx.fillText(line, ta.x, ta.y + li * ta.fontSize * 1.2));
+          lCtx.restore();
+        }
+        offCtx.save();
+        offCtx.setTransform(1, 0, 0, 1, 0, 0);
+        offCtx.globalAlpha = layer.opacity;
+        const blendComposite = BLEND_MODE_OPTIONS.find(b => b.id === (layer.blendMode || 'normal'))?.composite || 'source-over';
+        offCtx.globalCompositeOperation = blendComposite;
+        offCtx.drawImage(layerCanvas, 0, 0);
+        offCtx.restore();
+        offCtx.save();
+        offCtx.translate(pan.x, pan.y);
+        offCtx.scale(zoom, zoom);
+      } else {
+        offCtx.globalAlpha = layer.opacity;
+        for (const stroke of layer.strokes) {
+          if (stroke.tool === 'eraser') continue;
+          drawStroke(offCtx, stroke);
+        }
+        for (const ta of (layer.textAnnotations || [])) {
+          offCtx.save();
+          offCtx.font = `${ta.italic ? 'italic ' : ''}${ta.bold ? 'bold ' : ''}${ta.fontSize}px ${ta.font}`;
+          offCtx.fillStyle = ta.color;
+          offCtx.textBaseline = 'top';
+          ta.text.split('\n').forEach((line, li) => offCtx.fillText(line, ta.x, ta.y + li * ta.fontSize * 1.2));
+          offCtx.restore();
+        }
+        offCtx.globalAlpha = 1;
+      }
+
+      // Render images
+      for (const img of (layer.images || [])) {
+        const cachedImg = getOrLoadImage(img.src);
+        if (cachedImg?.complete) {
+          offCtx.drawImage(cachedImg, img.x, img.y, img.width, img.height);
+        }
+      }
+
+      // Render washi tapes
+      for (const wt of (layer.washiTapes || [])) {
+        drawWashiTape(offCtx, wt, zoom, false);
+      }
+
+      // Render sticky notes
+      for (const sn of (layer.stickyNotes || [])) {
+        offCtx.save();
+        if (sn.rotation) {
+          offCtx.translate(sn.x + sn.width / 2, sn.y + sn.height / 2);
+          offCtx.rotate(sn.rotation);
+          offCtx.translate(-(sn.x + sn.width / 2), -(sn.y + sn.height / 2));
+        }
+        offCtx.fillStyle = sn.color;
+        offCtx.shadowColor = 'rgba(0,0,0,0.1)';
+        offCtx.shadowBlur = 6;
+        offCtx.shadowOffsetY = 2;
+        offCtx.fillRect(sn.x, sn.y, sn.width, sn.height);
+        offCtx.shadowColor = 'transparent';
+        offCtx.fillStyle = '#1a1a1a';
+        offCtx.font = `${sn.fontSize}px sans-serif`;
+        offCtx.textBaseline = 'top';
+        const lines = sn.text.split('\n');
+        for (let li = 0; li < lines.length; li++) {
+          offCtx.fillText(lines[li], sn.x + 8, sn.y + 8 + li * (sn.fontSize + 4), sn.width - 16);
+        }
+        offCtx.restore();
+      }
+    }
+
+    offCtx.restore();
+
+    const dataUrl = offscreen.toDataURL('image/png');
     const base64 = dataUrl.split(',')[1];
-    await nativeSaveAndShare(base64, 'sketch.png', 'image/png');
-  }, [nativeSaveAndShare]);
+    await nativeSaveAndShare(base64, `sketch-${resolution}x.png`, 'image/png');
+    toast.success(t('sketch.exportedHighRes', { resolution: `${resolution}x`, width: offW, height: offH }), { id: 'hires-export' });
+  }, [nativeSaveAndShare, background, gridColor, gridOpacity, getOrLoadImage]);
 
   const handleNativeShare = useCallback(async () => {
     const canvas = canvasRef.current;
