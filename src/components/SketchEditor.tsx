@@ -3701,22 +3701,7 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
       redoStackRef.current = [];
       const layer = layersRef.current.find(l => l.id === activeLayerId);
       if (layer) {
-        // Shape recognition: convert freehand to clean shapes
-        let strokeToAdd = finishedStroke;
-        if (shapeRecognitionEnabled && !isShapeTool(finishedStroke.tool) && finishedStroke.tool !== 'eraser' && finishedStroke.tool !== 'washi') {
-          const result = recognizeShape(finishedStroke.points);
-          if (result) {
-            const cleanStroke = convertToCleanShape(finishedStroke, result.shape);
-            if (cleanStroke) {
-              strokeToAdd = cleanStroke;
-              const shapeName = result.shape.type.charAt(0).toUpperCase() + result.shape.type.slice(1);
-              // Show confidence badge on canvas
-              setShapeConfidenceBadge({ label: shapeName, confidence: result.confidence, x: finishedStroke.points[0].x, y: finishedStroke.points[0].y });
-              setTimeout(() => setShapeConfidenceBadge(null), 2500);
-              toast.success(`✨ ${t('sketch.shapeDetected', { shape: shapeName })} — ${result.confidence}%`, { duration: 2000 });
-            }
-          }
-        }
+        const strokeToAdd = finishedStroke;
 
         // Stamp stroke with audio timestamp if recording
         if (isAudioRecording && audioRecordingStartRef.current > 0) {
