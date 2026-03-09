@@ -959,6 +959,10 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
   const cursorHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [cursorHidden, setCursorHidden] = useState(false);
   
+  // Eraser cursor preview
+  const eraserCursorRef = useRef<{ x: number; y: number } | null>(null);
+  const [eraserCursorPos, setEraserCursorPos] = useState<{ x: number; y: number } | null>(null);
+  
   // Laser pointer state
   const laserTrailRef = useRef<{ x: number; y: number; time: number }[]>([]);
   const laserRafRef = useRef(0);
@@ -2756,6 +2760,14 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
   }, [color, strokeWidth, tool, activeLayerId, redrawAll, eyedropperActive, applyColor, toolOpacity, selectedIndices, selectionRotation, clearSelection, fillEnabled, fillColor, fillOpacity, fillType, fillColor2, fillAngle, snapEnabled, background, pressureOpacityEnabled, highlightOpacity, presentationMode, isAudioSyncPlaying, washiPatternId]);
 
   const onPointerMove = useCallback((e: PointerEvent) => {
+    // Update eraser cursor position
+    if (tool === 'eraser') {
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (rect) {
+        eraserCursorRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+        setEraserCursorPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+      }
+    }
     // Infinite canvas: panning in progress
     if (isPanningRef.current && panStartRef.current) {
       const dx = e.clientX - panStartRef.current.x;
@@ -4821,6 +4833,7 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
             'absolute inset-0',
             isPanning ? (isPanningRef.current ? 'cursor-grabbing' : 'cursor-grab') :
             eyedropperActive ? 'cursor-cell' :
+            tool === 'eraser' ? 'cursor-none' :
             tool === 'text' ? 'cursor-text' :
             tool === 'pdfTextSelect' ? 'cursor-text' :
             tool === 'sticky' ? 'cursor-crosshair' :
@@ -4829,8 +4842,22 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
             tool === 'select' ? 'cursor-default' : 'cursor-crosshair'
           )}
           style={{ touchAction: 'none' }}
+          onPointerEnter={() => { if (tool === 'eraser') setEraserCursorPos(eraserCursorRef.current); }}
+          onPointerLeave={() => setEraserCursorPos(null)}
         />
-        {/* Video Panel */}
+        {/* Eraser cursor preview */}
+        {tool === 'eraser' && eraserCursorPos && (
+          <div
+            className="absolute pointer-events-none z-10 rounded-full border-2 border-foreground/60"
+            style={{
+              width: strokeWidth * zoomRef.current * 2,
+              height: strokeWidth * zoomRef.current * 2,
+              left: eraserCursorPos.x - strokeWidth * zoomRef.current,
+              top: eraserCursorPos.y - strokeWidth * zoomRef.current,
+              backgroundColor: 'hsl(var(--foreground) / 0.08)',
+            }}
+          />
+        )}
         {showVideoPanel && !presentationMode && (
           <SketchVideoPanel
             onClose={() => { setShowVideoPanel(false); }}
