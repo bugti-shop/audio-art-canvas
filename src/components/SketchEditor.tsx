@@ -1434,14 +1434,14 @@ const recognizeShape = (points: Point[]): RecognizedShape => {
   }
 
   // --- Triangle: 3 corners ---
-  if (numCorners >= 3 && numCorners <= 5) {
+  if (numCorners >= 3 && numCorners <= 4) {
     const top3 = corners.slice(0, 3);
     const triArea = Math.abs(
       (top3[1].x - top3[0].x) * (top3[2].y - top3[0].y) -
       (top3[2].x - top3[0].x) * (top3[1].y - top3[0].y)
     ) / 2;
     const bboxArea = bw * bh;
-    if (triArea > bboxArea * 0.15 && triArea < bboxArea * 0.75) {
+    if (triArea > bboxArea * 0.2 && triArea < bboxArea * 0.72 && circularity < 0.75) {
       return {
         type: 'triangle',
         x1: top3[0].x, y1: top3[0].y,
