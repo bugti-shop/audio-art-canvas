@@ -1570,11 +1570,11 @@ const recognizeShape = (points: Point[]): RecognizedShape => {
       const topXSpread = Math.max(...topBand.map(p => p.x)) - Math.min(...topBand.map(p => p.x));
       const bottomXSpread = Math.max(...bottomBand.map(p => p.x)) - Math.min(...bottomBand.map(p => p.x));
       // Both top and bottom should span most of the width
-      if (topXSpread > bw * 0.6 && bottomXSpread > bw * 0.6) {
+      if (topXSpread > bw * 0.65 && bottomXSpread > bw * 0.65 && Math.abs(topXSpread - bottomXSpread) < bw * 0.22) {
         // Check for vertical sides
         const leftSide = points.filter(p => p.x < minX + bw * 0.15);
         const rightSide = points.filter(p => p.x > maxX - bw * 0.15);
-        if (leftSide.length > 3 && rightSide.length > 3) {
+        if (leftSide.length > 3 && rightSide.length > 3 && numCorners <= 5) {
           return { type: 'cylinder', x: minX, y: minY, w: bw, h: bh };
         }
       }
