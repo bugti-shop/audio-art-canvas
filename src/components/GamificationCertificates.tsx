@@ -187,11 +187,9 @@ interface UserProgress {
   longestStreak: number;
   notesCreated: number;
   foldersUsed: number;
-  isAdmin: boolean;
 }
 
 const computeUnlockPercent = (progress: UserProgress, cert: CertificateLevel): number => {
-  if (progress.isAdmin) return 100;
   const r = cert.requirements;
   const parts = [
     Math.min(progress.tasksCompleted / r.tasksCompleted, 1),
@@ -203,7 +201,6 @@ const computeUnlockPercent = (progress: UserProgress, cert: CertificateLevel): n
 };
 
 const isUnlocked = (progress: UserProgress, cert: CertificateLevel): boolean => {
-  if (progress.isAdmin) return true;
   const r = cert.requirements;
   return (
     progress.tasksCompleted >= r.tasksCompleted &&
