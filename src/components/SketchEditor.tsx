@@ -1966,6 +1966,27 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
       }
     }
 
+    // Draw smart alignment guides
+    if (alignmentGuidesRef.current.length > 0) {
+      ctx.save();
+      ctx.strokeStyle = 'hsl(340 90% 55% / 0.75)';
+      ctx.lineWidth = 1 / zoom;
+      ctx.setLineDash([4 / zoom, 3 / zoom]);
+      for (const guide of alignmentGuidesRef.current) {
+        ctx.beginPath();
+        if (guide.type === 'v') {
+          ctx.moveTo(guide.pos, guide.from);
+          ctx.lineTo(guide.pos, guide.to);
+        } else {
+          ctx.moveTo(guide.from, guide.pos);
+          ctx.lineTo(guide.to, guide.pos);
+        }
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
+
     // Draw marquee rectangle
     if (marqueeRef.current) {
       const m = marqueeRef.current;
