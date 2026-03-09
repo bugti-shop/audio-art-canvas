@@ -105,6 +105,9 @@ interface Stroke {
   tool: ToolType;
   fillColor?: string;
   fillOpacity?: number;
+  fillType?: 'solid' | 'linear-gradient' | 'radial-gradient' | 'stripes' | 'dots' | 'crosshatch';
+  fillColor2?: string; // secondary color for gradients
+  fillAngle?: number; // gradient angle in degrees (0-360)
   pressureOpacity?: boolean;
   isClipMask?: boolean;
   audioTimestamp?: number; // ms offset from audio recording start
