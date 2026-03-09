@@ -9275,6 +9275,62 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
                       />
                     ))}
                   </div>
+                  {/* Fill type selector */}
+                  <div>
+                    <p className="text-[10px] text-muted-foreground mb-1">Fill Type</p>
+                    <div className="flex gap-1 flex-wrap">
+                      {([
+                        { id: 'solid', label: '■' },
+                        { id: 'linear-gradient', label: '◧' },
+                        { id: 'radial-gradient', label: '◉' },
+                        { id: 'stripes', label: '▤' },
+                        { id: 'dots', label: '⠿' },
+                        { id: 'crosshatch', label: '▩' },
+                      ] as { id: typeof fillType; label: string }[]).map(ft => (
+                        <button key={ft.id}
+                          className={cn('w-7 h-7 rounded text-xs font-bold border-2 transition-all active:scale-90',
+                            fillType === ft.id ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:bg-muted')}
+                          onClick={() => setFillType(ft.id)}
+                          title={ft.id.replace('-', ' ')}
+                        >
+                          {ft.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {/* Secondary color for gradients */}
+                  {(fillType === 'linear-gradient' || fillType === 'radial-gradient') && (
+                    <div>
+                      <p className="text-[10px] text-muted-foreground mb-1">Second Color</p>
+                      <div className="flex gap-1 flex-wrap">
+                        {['#8b5cf6','#3b82f6','#ef4444','#22c55e','#f59e0b','#ec4899','#06b6d4','#f97316','#1a1a1a','#ffffff'].map(c => (
+                          <button key={c}
+                            className={cn('w-5 h-5 rounded-full border-2 transition-transform active:scale-90',
+                              fillColor2 === c ? 'border-primary scale-110' : 'border-border')}
+                            style={{ backgroundColor: c }}
+                            onClick={() => setFillColor2(c)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {/* Gradient angle for linear gradient */}
+                  {fillType === 'linear-gradient' && (
+                    <div>
+                      <p className="text-[10px] text-muted-foreground mb-1">Direction: {fillAngle}°</p>
+                      <div className="flex gap-1 flex-wrap">
+                        {[0, 45, 90, 135, 180, 225, 270, 315].map(a => (
+                          <button key={a}
+                            className={cn('w-6 h-6 rounded border-2 text-[9px] font-medium transition-all active:scale-90',
+                              fillAngle === a ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:bg-muted')}
+                            onClick={() => setFillAngle(a)}
+                          >
+                            {['→','↗','↑','↖','←','↙','↓','↘'][Math.round(a / 45) % 8]}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   <div>
                     <p className="text-[10px] text-muted-foreground mb-1">{t('sketch.fillOpacity')}: {Math.round(fillOpacity * 100)}%</p>
                     <Slider min={5} max={100} step={5} value={[Math.round(fillOpacity * 100)]} onValueChange={([v]) => setFillOpacity(v / 100)} />
