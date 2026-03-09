@@ -5446,7 +5446,7 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
       color: strokeColor,
       width: strokeWidth,
       tool,
-      ...(isShapeTool(tool) && fillEnabled ? { fillColor, fillOpacity } : {}),
+      ...(isShapeTool(tool) && fillEnabled ? { fillColor, fillOpacity, fillType, fillColor2, fillAngle } : {}),
       ...(tool === 'textHighlight' ? { fillOpacity: highlightOpacity } : {}),
       ...(pressureOpacityEnabled && !isShapeTool(tool) && tool !== 'eraser' ? { pressureOpacity: true } : {}),
       ...(tool === 'washi' ? { washiPatternId } : {}),
