@@ -1011,7 +1011,18 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
   const [fillAngle, setFillAngle] = useState(135);
   const [pressureOpacityEnabled, setPressureOpacityEnabled] = useState(false);
 
-  // Color palette manager state
+  // Pressure curve: [x1, y1, x2, y2] for cubic bezier control points (0-1 range)
+  // Maps input pressure (x-axis) to output pressure (y-axis)
+  const PRESSURE_CURVE_PRESETS: { label: string; curve: [number, number, number, number] }[] = useMemo(() => [
+    { label: 'Linear', curve: [0.25, 0.25, 0.75, 0.75] },
+    { label: 'Soft', curve: [0.4, 0.0, 0.6, 1.0] },
+    { label: 'Hard', curve: [0.0, 0.4, 1.0, 0.6] },
+    { label: 'S-Curve', curve: [0.5, 0.0, 0.5, 1.0] },
+  ], []);
+  const [pressureCurve, setPressureCurve] = useState<[number, number, number, number]>([0.25, 0.25, 0.75, 0.75]);
+  const pressureCurveRef = useRef<[number, number, number, number]>([0.25, 0.25, 0.75, 0.75]);
+  useEffect(() => { pressureCurveRef.current = pressureCurve; }, [pressureCurve]);
+
   const [savedPalettes, setSavedPalettes] = useState<{ name: string; colors: string[] }[]>(() => {
     try {
       const stored = localStorage.getItem('sketch-color-palettes');
