@@ -1366,6 +1366,42 @@ const recognizeShape = (points: Point[]): RecognizedShape => {
     }
   }
 
+  // --- Star detection: 5 corners with alternating in/out pattern ---
+  if (corners.length >= 5 && corners.length <= 7) {
+    const top5 = corners.slice(0, 5);
+    // Check if corners alternate between inner and outer radii from center
+    const dists = top5.map(c => Math.sqrt((c.x - cx) ** 2 + (c.y - cy) ** 2));
+    const avgDist = dists.reduce((a, b) => a + b, 0) / dists.length;
+    // Sort corners by angle from center
+    const withAngles = top5.map(c => ({ ...c, angle: Math.atan2(c.y - cy, c.x - cx) }));
+    withAngles.sort((a, b) => a.angle - b.angle);
+    const sortedDists = withAngles.map(c => Math.sqrt((c.x - cx) ** 2 + (c.y - cy) ** 2));
+    // Check alternating pattern (inner/outer)
+    let alternating = 0;
+    for (let i = 1; i < sortedDists.length; i++) {
+      const prev = sortedDists[i - 1] > avgDist;
+      const curr = sortedDists[i] > avgDist;
+      if (prev !== curr) alternating++;
+    }
+    // At least 3 alternations for 5 points = star-like
+    if (alternating >= 3) {
+      const maxR = Math.max(...dists);
+      return { type: 'star', cx, cy, r: maxR };
+    }
+    // Also detect star if 5 points are roughly evenly distributed around center
+    const angleDiffs: number[] = [];
+    for (let i = 1; i < withAngles.length; i++) {
+      angleDiffs.push(withAngles[i].angle - withAngles[i - 1].angle);
+    }
+    angleDiffs.push(2 * Math.PI + withAngles[0].angle - withAngles[withAngles.length - 1].angle);
+    const avgAngleDiff = (2 * Math.PI) / 5;
+    const angleDeviation = angleDiffs.reduce((sum, d) => sum + Math.abs(d - avgAngleDiff), 0) / angleDiffs.length;
+    if (angleDeviation < 0.5) {
+      const maxR = Math.max(...dists);
+      return { type: 'star', cx, cy, r: maxR };
+    }
+  }
+
   return null;
 };
 
