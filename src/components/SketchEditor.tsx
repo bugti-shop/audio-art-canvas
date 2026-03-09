@@ -1555,7 +1555,7 @@ const recognizeShape = (points: Point[]): RecognizedShape => {
       const bottomYs = bottomHalf.map(p => p.y);
       const bottomRange = Math.max(...bottomYs) - Math.min(...bottomYs);
       const bottomFlatness = bottomRange / bh;
-      if (bumpiness > 0.15 && bottomFlatness < 0.4 && bw > bh * 0.8) {
+      if (bumpiness > 0.12 && bumpiness < 0.45 && bottomFlatness < 0.34 && bw > bh * 1.05 && numCorners >= 6) {
         return { type: 'cloud', cx, cy, rx, ry };
       }
     }
