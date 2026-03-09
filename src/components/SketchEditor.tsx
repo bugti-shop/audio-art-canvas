@@ -1313,7 +1313,7 @@ const recognizeShape = (points: Point[]): RecognizedShape => {
 
   // Check if the path is closed (first ~= last)
   const closeDist = Math.sqrt((first.x - last.x) ** 2 + (first.y - last.y) ** 2);
-  const isClosed = closeDist < totalLen * 0.2;
+  const isClosed = closeDist < Math.max(18, totalLen * 0.16);
 
   // --- Arrow detection (line with a hook at the end) ---
   if (!isClosed) {
