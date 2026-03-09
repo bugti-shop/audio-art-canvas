@@ -7825,6 +7825,21 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
               const selectedShapeStrokes = selectedShapeIndices.map(idx => layer.strokes[idx]);
               const currentFill = selectedShapeStrokes[0]?.fillColor;
               const currentFillOpacity = selectedShapeStrokes[0]?.fillOpacity ?? 0.3;
+              const currentFillType = selectedShapeStrokes[0]?.fillType || 'solid';
+              const currentFillColor2 = selectedShapeStrokes[0]?.fillColor2 || '#8b5cf6';
+              const currentFillAngle = selectedShapeStrokes[0]?.fillAngle ?? 135;
+
+              const applyToSelected = (updater: (s: Stroke) => void) => {
+                undoStackRef.current = [...undoStackRef.current.slice(-(MAX_UNDO - 1)), cloneLayers(layersRef.current)];
+                redoStackRef.current = [];
+                for (const idx of selectedShapeIndices) {
+                  const s = layer.strokes[idx];
+                  if (s) updater(s);
+                }
+                redrawAll();
+                emitChange();
+                forceUpdate(n => n + 1);
+              };
 
               return (
                 <Popover>
@@ -7841,23 +7856,13 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
                       )}
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent className="w-auto p-3 bg-card" align="start" side="bottom">
+                  <PopoverContent className="w-auto p-3 bg-card max-w-[220px]" align="start" side="bottom">
                     <p className="text-[10px] font-medium text-foreground mb-2">{t('sketch.fillColor')}</p>
                     <div className="flex gap-1.5 flex-wrap mb-2">
                       <button
                         className={cn('w-6 h-6 rounded-full border-2 transition-transform active:scale-90 flex items-center justify-center',
                           !currentFill ? 'border-primary scale-110' : 'border-border')}
-                        onClick={() => {
-                          undoStackRef.current = [...undoStackRef.current.slice(-(MAX_UNDO - 1)), cloneLayers(layersRef.current)];
-                          redoStackRef.current = [];
-                          for (const idx of selectedShapeIndices) {
-                            const s = layer.strokes[idx];
-                            if (s) { delete s.fillColor; delete s.fillOpacity; }
-                          }
-                          redrawAll();
-                          emitChange();
-                          forceUpdate(n => n + 1);
-                        }}
+                        onClick={() => applyToSelected(s => { delete s.fillColor; delete s.fillOpacity; delete s.fillType; delete s.fillColor2; delete s.fillAngle; })}
                         title={t('sketch.noFill')}
                       >
                         <X className="h-3 w-3 text-muted-foreground" />
@@ -7867,37 +7872,74 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
                           className={cn('w-6 h-6 rounded-full border-2 transition-transform active:scale-90',
                             currentFill === c ? 'border-primary scale-110' : 'border-border')}
                           style={{ backgroundColor: c }}
-                          onClick={() => {
-                            undoStackRef.current = [...undoStackRef.current.slice(-(MAX_UNDO - 1)), cloneLayers(layersRef.current)];
-                            redoStackRef.current = [];
-                            for (const idx of selectedShapeIndices) {
-                              const s = layer.strokes[idx];
-                              if (s) {
-                                s.fillColor = c;
-                                s.fillOpacity = s.fillOpacity ?? 0.3;
-                              }
-                            }
-                            redrawAll();
-                            emitChange();
-                            forceUpdate(n => n + 1);
-                          }}
+                          onClick={() => applyToSelected(s => { s.fillColor = c; s.fillOpacity = s.fillOpacity ?? 0.3; })}
                         />
                       ))}
                     </div>
                     {currentFill && (
-                      <div>
-                        <p className="text-[10px] text-muted-foreground mb-1">{t('sketch.fillOpacity')}: {Math.round(currentFillOpacity * 100)}%</p>
-                        <Slider min={5} max={100} step={5} value={[Math.round(currentFillOpacity * 100)]} onValueChange={([v]) => {
-                          undoStackRef.current = [...undoStackRef.current.slice(-(MAX_UNDO - 1)), cloneLayers(layersRef.current)];
-                          redoStackRef.current = [];
-                          for (const idx of selectedShapeIndices) {
-                            const s = layer.strokes[idx];
-                            if (s) s.fillOpacity = v / 100;
-                          }
-                          redrawAll();
-                          emitChange();
-                          forceUpdate(n => n + 1);
-                        }} />
+                      <div className="space-y-2">
+                        {/* Fill type selector */}
+                        <div>
+                          <p className="text-[10px] text-muted-foreground mb-1">Fill Type</p>
+                          <div className="flex gap-1 flex-wrap">
+                            {([
+                              { id: 'solid', label: '■' },
+                              { id: 'linear-gradient', label: '◧' },
+                              { id: 'radial-gradient', label: '◉' },
+                              { id: 'stripes', label: '▤' },
+                              { id: 'dots', label: '⠿' },
+                              { id: 'crosshatch', label: '▩' },
+                            ] as { id: Stroke['fillType']; label: string }[]).map(ft => (
+                              <button key={ft.id}
+                                className={cn('w-7 h-7 rounded text-xs font-bold border-2 transition-all active:scale-90',
+                                  currentFillType === ft.id ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:bg-muted')}
+                                onClick={() => applyToSelected(s => { s.fillType = ft.id; })}
+                                title={ft.id!.replace('-', ' ')}
+                              >
+                                {ft.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        {/* Secondary color for gradients */}
+                        {(currentFillType === 'linear-gradient' || currentFillType === 'radial-gradient') && (
+                          <div>
+                            <p className="text-[10px] text-muted-foreground mb-1">Second Color</p>
+                            <div className="flex gap-1 flex-wrap">
+                              {['#8b5cf6','#3b82f6','#ef4444','#22c55e','#f59e0b','#ec4899','#06b6d4','#f97316','#1a1a1a','#ffffff'].map(c => (
+                                <button key={c}
+                                  className={cn('w-5 h-5 rounded-full border-2 transition-transform active:scale-90',
+                                    currentFillColor2 === c ? 'border-primary scale-110' : 'border-border')}
+                                  style={{ backgroundColor: c }}
+                                  onClick={() => applyToSelected(s => { s.fillColor2 = c; })}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {/* Gradient angle for linear */}
+                        {currentFillType === 'linear-gradient' && (
+                          <div>
+                            <p className="text-[10px] text-muted-foreground mb-1">Direction: {currentFillAngle}°</p>
+                            <div className="flex gap-1 flex-wrap">
+                              {[0, 45, 90, 135, 180, 225, 270, 315].map(a => (
+                                <button key={a}
+                                  className={cn('w-6 h-6 rounded border-2 text-[9px] font-medium transition-all active:scale-90',
+                                    currentFillAngle === a ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:bg-muted')}
+                                  onClick={() => applyToSelected(s => { s.fillAngle = a; })}
+                                >
+                                  {['→','↗','↑','↖','←','↙','↓','↘'][Math.round(a / 45) % 8]}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        <div>
+                          <p className="text-[10px] text-muted-foreground mb-1">{t('sketch.fillOpacity')}: {Math.round(currentFillOpacity * 100)}%</p>
+                          <Slider min={5} max={100} step={5} value={[Math.round(currentFillOpacity * 100)]} onValueChange={([v]) => {
+                            applyToSelected(s => { s.fillOpacity = v / 100; });
+                          }} />
+                        </div>
                       </div>
                     )}
                   </PopoverContent>
