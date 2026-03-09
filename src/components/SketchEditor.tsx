@@ -921,7 +921,132 @@ const PenPreviewCanvas = memo(({ penType, isActive, currentColor }: { penType: D
 });
 PenPreviewCanvas.displayName = 'PenPreviewCanvas';
 
+// --- Pressure Curve Editor Canvas ---
+const PressureCurveCanvas = memo(({ curve, onChange }: {
+  curve: [number, number, number, number];
+  onChange: (c: [number, number, number, number]) => void;
+}) => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const SIZE = 120;
+  const PAD = 12;
+
+  const draw = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = SIZE * dpr;
+    canvas.height = SIZE * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, SIZE, SIZE);
+
+    const area = SIZE - PAD * 2;
+    const toScreen = (nx: number, ny: number) => [PAD + nx * area, PAD + (1 - ny) * area];
+
+    // Background grid
+    ctx.strokeStyle = 'hsl(var(--border) / 0.3)';
+    ctx.lineWidth = 0.5;
+    for (let i = 0; i <= 4; i++) {
+      const p = PAD + (i / 4) * area;
+      ctx.beginPath(); ctx.moveTo(p, PAD); ctx.lineTo(p, PAD + area); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(PAD, p); ctx.lineTo(PAD + area, p); ctx.stroke();
+    }
+
+    // Diagonal (linear reference)
+    ctx.strokeStyle = 'hsl(var(--muted-foreground) / 0.25)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    const [dx0, dy0] = toScreen(0, 0);
+    const [dx1, dy1] = toScreen(1, 1);
+    ctx.moveTo(dx0, dy0); ctx.lineTo(dx1, dy1); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Control point lines
+    const [cx1, cy1] = toScreen(curve[0], curve[1]);
+    const [cx2, cy2] = toScreen(curve[2], curve[3]);
+    const [p0x, p0y] = toScreen(0, 0);
+    const [p1x, p1y] = toScreen(1, 1);
+
+    ctx.strokeStyle = 'hsl(var(--muted-foreground) / 0.4)';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(p0x, p0y); ctx.lineTo(cx1, cy1); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(p1x, p1y); ctx.lineTo(cx2, cy2); ctx.stroke();
+
+    // Bezier curve
+    ctx.strokeStyle = 'hsl(var(--primary))';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(p0x, p0y);
+    ctx.bezierCurveTo(cx1, cy1, cx2, cy2, p1x, p1y);
+    ctx.stroke();
+
+    // Control point handles
+    for (const [cx, cy] of [[cx1, cy1], [cx2, cy2]]) {
+      ctx.beginPath();
+      ctx.arc(cx, cy, 5, 0, Math.PI * 2);
+      ctx.fillStyle = 'hsl(var(--primary))';
+      ctx.fill();
+      ctx.strokeStyle = 'hsl(var(--primary-foreground))';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+
+    // Labels
+    ctx.fillStyle = 'hsl(var(--muted-foreground))';
+    ctx.font = '8px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Input Pressure', SIZE / 2, SIZE - 1);
+    ctx.save();
+    ctx.translate(7, SIZE / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.fillText('Output', 0, 0);
+    ctx.restore();
+  }, [curve]);
+
+  useEffect(() => { draw(); }, [draw]);
+
+  const handleInteraction = useCallback((e: React.MouseEvent<HTMLCanvasElement>, isDrag = false) => {
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const area = SIZE - PAD * 2;
+    const nx = Math.max(0, Math.min(1, (e.clientX - rect.left - PAD) / area));
+    const ny = Math.max(0, Math.min(1, 1 - (e.clientY - rect.top - PAD) / area));
+
+    // Find closest control point
+    const d1 = Math.hypot(nx - curve[0], ny - curve[1]);
+    const d2 = Math.hypot(nx - curve[2], ny - curve[3]);
+    const newCurve: [number, number, number, number] = [...curve];
+    if (d1 <= d2) {
+      newCurve[0] = nx; newCurve[1] = ny;
+    } else {
+      newCurve[2] = nx; newCurve[3] = ny;
+    }
+    onChange(newCurve);
+  }, [curve, onChange]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      width={SIZE}
+      height={SIZE}
+      className="cursor-crosshair rounded-lg border border-border/50 bg-muted/30"
+      style={{ width: SIZE, height: SIZE }}
+      onMouseDown={(e) => {
+        handleInteraction(e);
+        const move = (ev: MouseEvent) => handleInteraction(ev as any, true);
+        const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
+        window.addEventListener('mousemove', move);
+        window.addEventListener('mouseup', up);
+      }}
+    />
+  );
+});
+PressureCurveCanvas.displayName = 'PressureCurveCanvas';
+
 export const SketchEditor = memo(({ initialData, onChange, onImageExport, className }: SketchEditorProps) => {
+
   const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1011,7 +1136,18 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
   const [fillAngle, setFillAngle] = useState(135);
   const [pressureOpacityEnabled, setPressureOpacityEnabled] = useState(false);
 
-  // Color palette manager state
+  // Pressure curve: [x1, y1, x2, y2] for cubic bezier control points (0-1 range)
+  // Maps input pressure (x-axis) to output pressure (y-axis)
+  const PRESSURE_CURVE_PRESETS: { label: string; curve: [number, number, number, number] }[] = useMemo(() => [
+    { label: 'Linear', curve: [0.25, 0.25, 0.75, 0.75] },
+    { label: 'Soft', curve: [0.4, 0.0, 0.6, 1.0] },
+    { label: 'Hard', curve: [0.0, 0.4, 1.0, 0.6] },
+    { label: 'S-Curve', curve: [0.5, 0.0, 0.5, 1.0] },
+  ], []);
+  const [pressureCurve, setPressureCurve] = useState<[number, number, number, number]>([0.25, 0.25, 0.75, 0.75]);
+  const pressureCurveRef = useRef<[number, number, number, number]>([0.25, 0.25, 0.75, 0.75]);
+  useEffect(() => { pressureCurveRef.current = pressureCurve; }, [pressureCurve]);
+
   const [savedPalettes, setSavedPalettes] = useState<{ name: string; colors: string[] }[]>(() => {
     try {
       const stored = localStorage.getItem('sketch-color-palettes');
@@ -2257,7 +2393,25 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
     return {
       x: wx,
       y: wy,
-      pressure: e.pressure > 0 ? e.pressure : 0.5,
+      pressure: (() => {
+        const rawP = e.pressure > 0 ? e.pressure : 0.5;
+        // Apply pressure curve: cubic bezier from (0,0) to (1,1) with control points
+        const [cx1, cy1, cx2, cy2] = pressureCurveRef.current;
+        // Newton's method to solve bezier x(t) = rawP for t, then return y(t)
+        let t = rawP; // initial guess
+        for (let i = 0; i < 8; i++) {
+          const t2 = t * t, t3 = t2 * t;
+          const mt = 1 - t, mt2 = mt * mt, mt3 = mt2 * mt;
+          const xAt = mt3 * 0 + 3 * mt2 * t * cx1 + 3 * mt * t2 * cx2 + t3 * 1;
+          const dxdt = 3 * mt2 * cx1 + 6 * mt * t * (cx2 - cx1) + 3 * t2 * (1 - cx2);
+          if (Math.abs(dxdt) < 1e-6) break;
+          t -= (xAt - rawP) / dxdt;
+          t = Math.max(0, Math.min(1, t));
+        }
+        const t2 = t * t, t3 = t2 * t;
+        const mt = 1 - t, mt2 = mt * mt, mt3 = mt2 * mt;
+        return Math.max(0.01, Math.min(1, mt3 * 0 + 3 * mt2 * t * cy1 + 3 * mt * t2 * cy2 + t3 * 1));
+      })(),
       timestamp: e.timeStamp,
     };
   };
@@ -6763,6 +6917,33 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
                 >
                   {t('sketch.resetToDefaults')}
                 </button>
+              </div>
+            )}
+
+            {/* Pressure Curve Editor */}
+            {DRAW_TOOLS.some(d => d.id === tool) && (
+              <div className="mt-2.5 pt-2.5 border-t border-border/30 space-y-2">
+                <p className="text-[10px] font-semibold text-foreground/80">Pressure Curve</p>
+                {/* Presets */}
+                <div className="flex gap-1 flex-wrap">
+                  {PRESSURE_CURVE_PRESETS.map(preset => {
+                    const isActive = pressureCurve[0] === preset.curve[0] && pressureCurve[1] === preset.curve[1] &&
+                      pressureCurve[2] === preset.curve[2] && pressureCurve[3] === preset.curve[3];
+                    return (
+                      <button key={preset.label}
+                        className={cn(
+                          'px-2 py-0.5 rounded text-[9px] font-medium transition-colors',
+                          isActive ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-accent'
+                        )}
+                        onClick={() => setPressureCurve([...preset.curve])}
+                      >
+                        {preset.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                {/* Interactive Bezier Canvas */}
+                <PressureCurveCanvas curve={pressureCurve} onChange={setPressureCurve} />
               </div>
             )}
           </PopoverContent>
