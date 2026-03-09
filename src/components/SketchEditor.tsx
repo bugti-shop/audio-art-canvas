@@ -5467,7 +5467,7 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
     } else {
       scribbleDetectorRef.current = null;
     }
-  }, [color, strokeWidth, tool, activeLayerId, redrawAll, eyedropperActive, applyColor, toolOpacity, selectedIndices, selectionRotation, clearSelection, fillEnabled, fillColor, fillOpacity, snapEnabled, background, pressureOpacityEnabled, highlightOpacity, presentationMode, isAudioSyncPlaying, washiPatternId]);
+  }, [color, strokeWidth, tool, activeLayerId, redrawAll, eyedropperActive, applyColor, toolOpacity, selectedIndices, selectionRotation, clearSelection, fillEnabled, fillColor, fillOpacity, fillType, fillColor2, fillAngle, snapEnabled, background, pressureOpacityEnabled, highlightOpacity, presentationMode, isAudioSyncPlaying, washiPatternId]);
 
   const onPointerMove = useCallback((e: PointerEvent) => {
     // Infinite canvas: panning in progress
