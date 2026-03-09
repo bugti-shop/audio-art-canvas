@@ -9041,7 +9041,7 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
                       ? 'bg-primary/15 text-primary'
                       : 'text-foreground/70 hover:bg-muted/80 hover:text-foreground active:scale-95'
                   )}
-                  onClick={() => { setTool(d.id); setEyedropperActive(false); }}
+                  onClick={() => { setTool(d.id); setEyedropperActive(false); setOpenToolbarPopover(null); }}
                 >
                   <div className="flex items-center gap-1.5 w-full">
                     <d.icon className="h-3.5 w-3.5 flex-shrink-0" strokeWidth={tool === d.id ? 2.5 : 1.8} />
