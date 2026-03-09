@@ -19,7 +19,6 @@ import { triggerHaptic, triggerNotificationHaptic } from '@/utils/haptics';
 import { loadTodoItems } from '@/utils/todoItemsStorage';
 import { loadNotesFromDB } from '@/utils/noteStorage';
 import { loadFolders } from '@/utils/folderStorage';
-import { getSetting as getSettingForAdmin } from '@/utils/settingsStorage';
 import { StreakData } from '@/utils/streakStorage';
 import { getSetting, setSetting } from '@/utils/settingsStorage';
 import { format } from 'date-fns';
@@ -187,11 +186,9 @@ interface UserProgress {
   longestStreak: number;
   notesCreated: number;
   foldersUsed: number;
-  isAdmin: boolean;
 }
 
 const computeUnlockPercent = (progress: UserProgress, cert: CertificateLevel): number => {
-  if (progress.isAdmin) return 100;
   const r = cert.requirements;
   const parts = [
     Math.min(progress.tasksCompleted / r.tasksCompleted, 1),
@@ -203,7 +200,6 @@ const computeUnlockPercent = (progress: UserProgress, cert: CertificateLevel): n
 };
 
 const isUnlocked = (progress: UserProgress, cert: CertificateLevel): boolean => {
-  if (progress.isAdmin) return true;
   const r = cert.requirements;
   return (
     progress.tasksCompleted >= r.tasksCompleted &&
@@ -215,11 +211,10 @@ const isUnlocked = (progress: UserProgress, cert: CertificateLevel): boolean => 
 
 export const hasNewCertificates = async (longestStreak: number): Promise<boolean> => {
   try {
-    const [tasks, notes, folders, adminBypass, seenCerts] = await Promise.all([
+    const [tasks, notes, folders, seenCerts] = await Promise.all([
       loadTodoItems(),
       loadNotesFromDB(),
       loadFolders(),
-      getSettingForAdmin<boolean>('npd_admin_bypass', false),
       getSetting<string[]>('npd_seen_certificates', []),
     ]);
     const completedTasks = tasks.filter(t => t.completed).length;
@@ -232,7 +227,6 @@ export const hasNewCertificates = async (longestStreak: number): Promise<boolean
       longestStreak,
       notesCreated: notes.length,
       foldersUsed: usedFolderIds.size,
-      isAdmin: !!adminBypass,
     };
     return CERTIFICATE_LEVELS.some(
       cert => isUnlocked(progress, cert) && !seenCerts.includes(cert.id)
@@ -279,11 +273,10 @@ export const GamificationCertificates = ({ isOpen, onClose, streakData }: Certif
     const load = async () => {
       setIsLoading(true);
       try {
-        const [tasks, notes, folders, adminBypass, seenCerts] = await Promise.all([
+        const [tasks, notes, folders, seenCerts] = await Promise.all([
           loadTodoItems(),
           loadNotesFromDB(),
           loadFolders(),
-          getSettingForAdmin<boolean>('npd_admin_bypass', false),
           getSetting<string[]>('npd_seen_certificates', []),
         ]);
 
@@ -298,7 +291,6 @@ export const GamificationCertificates = ({ isOpen, onClose, streakData }: Certif
           longestStreak: streakData?.longestStreak || 0,
           notesCreated: notes.length,
           foldersUsed: usedFolderIds.size,
-          isAdmin: !!adminBypass,
         };
         setProgress(userProgress);
 
