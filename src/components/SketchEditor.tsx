@@ -1085,7 +1085,6 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
   const svgInputRef = useRef<HTMLInputElement>(null);
 
   // Symmetry mode state
-  type SymmetryMode = 'off' | '2' | '4' | '8';
   const [symmetryMode, setSymmetryMode] = useState<SymmetryMode>('off');
 
   // Generate symmetry-mirrored strokes for N axes (radial symmetry around center)
