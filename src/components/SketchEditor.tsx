@@ -3540,6 +3540,7 @@ export const SketchEditor = memo(({ initialData, onChange, onImageExport, classN
     setRulerMeasurement(null);
     setShowPressure(false);
     scribbleDetectorRef.current = null;
+    alignmentGuidesRef.current = [];
 
     const finishedStroke = currentStrokeRef.current;
     const minPoints = finishedStroke.tool === 'spray' ? 1 : 2;
