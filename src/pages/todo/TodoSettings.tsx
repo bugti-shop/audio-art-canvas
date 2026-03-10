@@ -74,6 +74,7 @@ const TodoSettings = () => {
   const [dailyDigestEnabled, setDailyDigestEnabled] = useState(false);
   const [overdueAlertsEnabled, setOverdueAlertsEnabled] = useState(true);
   const [calendarSyncEnabled, setCalendarSyncEnabled] = useState(false);
+  const [syncDirection, setSyncDirection] = useState<'bidirectional' | 'push' | 'pull'>('bidirectional');
   const currentLanguage = languages.find(l => l.code === i18n.language) || languages[0];
 
   // Load settings
