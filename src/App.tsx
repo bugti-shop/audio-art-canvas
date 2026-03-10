@@ -292,6 +292,7 @@ const DeferredSyncInit = () => {
       <DeferredSyncHooks />
     </Suspense>
   );
+};
 
 const DeferredSyncHooks = lazy(() =>
   Promise.all([
