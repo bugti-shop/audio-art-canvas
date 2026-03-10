@@ -402,66 +402,68 @@ export const performFullCalendarSync = async (
       return result;
     }
 
-    // ── Push tasks with due dates (skip pulled native events) ──
-    const tasksWithDates = (tasks || []).filter(
-      t => t?.dueDate && !t?.completed && !isPulledNativeId(t.id)
-    );
-    onProgress?.({ phase: 'Pushing tasks', current: 0, total: tasksWithDates.length });
-    const taskResult = await processBatch(tasksWithDates, async (task) => {
-      await pushTaskToNativeCalendar(task);
-    }, (cur, tot) => {
-      result.pushed = cur;
-      onProgress?.({ phase: 'Pushing tasks', current: cur, total: tot });
-    });
-    result.pushed = taskResult.processed;
-    result.errors.push(...taskResult.errors.map(e => `Task push: ${e}`));
+    const direction = await getCalendarSyncDirection();
 
-    // ── Push app calendar events (skip pulled native events) ──
-    const appCreatedEvents = (appEvents || []).filter(e => !isPulledNativeId(e.id));
-    onProgress?.({ phase: 'Pushing events', current: 0, total: appCreatedEvents.length });
-    const eventResult = await processBatch(appCreatedEvents, async (event) => {
-      await pushEventToNativeCalendar(event);
-    }, (cur, tot) => {
-      onProgress?.({ phase: 'Pushing events', current: result.pushed + cur, total: result.pushed + tot });
-    });
-    result.pushed += eventResult.processed;
-    result.errors.push(...eventResult.errors.map(e => `Event push: ${e}`));
+    // ── Push (App → Calendar) — skip if direction is 'pull' only ──
+    if (direction !== 'pull') {
+      const tasksWithDates = (tasks || []).filter(
+        t => t?.dueDate && !t?.completed && !isPulledNativeId(t.id)
+      );
+      onProgress?.({ phase: 'Pushing tasks', current: 0, total: tasksWithDates.length });
+      const taskResult = await processBatch(tasksWithDates, async (task) => {
+        await pushTaskToNativeCalendar(task);
+      }, (cur, tot) => {
+        result.pushed = cur;
+        onProgress?.({ phase: 'Pushing tasks', current: cur, total: tot });
+      });
+      result.pushed = taskResult.processed;
+      result.errors.push(...taskResult.errors.map(e => `Task push: ${e}`));
 
-    // ── Pull from native calendar (deduplicated) ──
-    onProgress?.({ phase: 'Pulling events', current: 0, total: 0 });
-    try {
-      const { newEvents, updatedEvents } = await pullFromNativeCalendar();
-      const existingAppEvents = await getSetting<AppCalendarEvent[]>('calendarEvents', []);
+      const appCreatedEvents = (appEvents || []).filter(e => !isPulledNativeId(e.id));
+      onProgress?.({ phase: 'Pushing events', current: 0, total: appCreatedEvents.length });
+      const eventResult = await processBatch(appCreatedEvents, async (event) => {
+        await pushEventToNativeCalendar(event);
+      }, (cur, tot) => {
+        onProgress?.({ phase: 'Pushing events', current: result.pushed + cur, total: result.pushed + tot });
+      });
+      result.pushed += eventResult.processed;
+      result.errors.push(...eventResult.errors.map(e => `Event push: ${e}`));
+    }
 
-      let changed = false;
-      let merged = [...existingAppEvents];
+    // ── Pull (Calendar → App) — skip if direction is 'push' only ──
+    if (direction !== 'push') {
+      onProgress?.({ phase: 'Pulling events', current: 0, total: 0 });
+      try {
+        const { newEvents, updatedEvents } = await pullFromNativeCalendar();
+        const existingAppEvents = await getSetting<AppCalendarEvent[]>('calendarEvents', []);
 
-      // Add genuinely new events
-      if (newEvents.length > 0) {
-        merged = [...merged, ...newEvents];
-        result.pulled = newEvents.length;
-        changed = true;
-      }
+        let changed = false;
+        let merged = [...existingAppEvents];
 
-      // Update modified events in place
-      if (updatedEvents.length > 0) {
-        const updateMap = new Map(updatedEvents.map(e => [e.id, e]));
-        merged = merged.map(e => updateMap.get(e.id) || e);
-        result.updated = updatedEvents.length;
-        changed = true;
-      }
+        if (newEvents.length > 0) {
+          merged = [...merged, ...newEvents];
+          result.pulled = newEvents.length;
+          changed = true;
+        }
 
-      if (changed) {
-        await setSetting('calendarEvents', merged);
-        // Use a flag to prevent sync loop — the handler checks this
-        window.dispatchEvent(new CustomEvent('calendarEventsUpdated', { detail: { fromSync: true } }));
-      }
+        if (updatedEvents.length > 0) {
+          const updateMap = new Map(updatedEvents.map(e => [e.id, e]));
+          merged = merged.map(e => updateMap.get(e.id) || e);
+          result.updated = updatedEvents.length;
+          changed = true;
+        }
 
-      onProgress?.({ phase: 'Pulling events', current: result.pulled, total: result.pulled });
-    } catch (pullErr) {
-      const msg = String(pullErr);
-      if (!msg.includes('not implemented') && !msg.includes('UNIMPLEMENTED')) {
-        result.errors.push(`Pull failed: ${msg}`);
+        if (changed) {
+          await setSetting('calendarEvents', merged);
+          window.dispatchEvent(new CustomEvent('calendarEventsUpdated', { detail: { fromSync: true } }));
+        }
+
+        onProgress?.({ phase: 'Pulling events', current: result.pulled, total: result.pulled });
+      } catch (pullErr) {
+        const msg = String(pullErr);
+        if (!msg.includes('not implemented') && !msg.includes('UNIMPLEMENTED')) {
+          result.errors.push(`Pull failed: ${msg}`);
+        }
       }
     }
 
