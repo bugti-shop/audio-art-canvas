@@ -499,3 +499,38 @@ export const initializeCalendarSync = async (): Promise<void> => {
 
   console.log('System calendar sync initialized');
 };
+
+// ─── Clear duplicate calendar events ─────────────────────────────
+/**
+ * Removes duplicate app calendar events based on title + startDate matching.
+ * Keeps the first occurrence (oldest createdAt) and removes the rest.
+ * Returns the number of duplicates removed.
+ */
+export const clearDuplicateCalendarEvents = async (): Promise<number> => {
+  const events = await getSetting<AppCalendarEvent[]>('calendarEvents', []);
+  if (events.length === 0) return 0;
+
+  const seen = new Map<string, AppCalendarEvent>();
+  const deduped: AppCalendarEvent[] = [];
+
+  for (const event of events) {
+    const startStr = event.startDate instanceof Date
+      ? event.startDate.toISOString()
+      : new Date(event.startDate).toISOString();
+    const key = `${(event.title || '').trim().toLowerCase()}|${startStr}`;
+
+    if (!seen.has(key)) {
+      seen.set(key, event);
+      deduped.push(event);
+    }
+    // else: duplicate → skip
+  }
+
+  const removed = events.length - deduped.length;
+  if (removed > 0) {
+    await setSetting('calendarEvents', deduped);
+    window.dispatchEvent(new CustomEvent('calendarEventsUpdated', { detail: { fromSync: true } }));
+  }
+
+  return removed;
+};
