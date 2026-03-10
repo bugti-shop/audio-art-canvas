@@ -9,7 +9,8 @@ const NATIVE_SCOPES = [
   'https://www.googleapis.com/auth/drive.appdata',
   'https://www.googleapis.com/auth/drive.file',
 ];
-const NATIVE_SESSION_TTL = 365 * 24 * 3600 * 1000;
+const SESSION_TTL = 365 * 24 * 3600 * 1000; // 1 year session
+const ACCESS_TOKEN_TTL = 3500 * 1000; // ~58 min (Google tokens last 1hr)
 const NATIVE_LOGIN_OPTIONS = {
   scopes: NATIVE_SCOPES,
   forceRefreshToken: true,
@@ -31,6 +32,16 @@ export interface GoogleUser {
 
 const isNative = () => Capacitor.isNativePlatform();
 
+const makeUser = (
+  profile: { email: string; name: string; picture: string },
+  accessToken: string,
+): GoogleUser => ({
+  ...profile,
+  accessToken,
+  accessTokenExpiresAt: Date.now() + ACCESS_TOKEN_TTL,
+  expiresAt: Date.now() + SESSION_TTL,
+});
+
 // ── Native (Capgo Social Login) ───────────────────────────────────────────
 
 let nativeInitialized = false;
@@ -49,19 +60,7 @@ const getNativeAccessToken = (result: any): string => {
   return r?.accessToken?.token || r?.accessToken || '';
 };
 
-const nativeSignIn = async (): Promise<GoogleUser> => {
-  await ensureNativeInit();
-  const { SocialLogin } = await import('@capgo/capacitor-social-login');
-
-  const result = await SocialLogin.login({
-    provider: 'google',
-    options: NATIVE_LOGIN_OPTIONS,
-  });
-
-  const r = result.result as any;
-  const accessToken = getNativeAccessToken(result);
-
-  // Try profile from result, fallback to userinfo API
+const extractNativeProfile = async (r: any, accessToken: string) => {
   let email = r.profile?.email || r.email || '';
   let name = r.profile?.name || r.name || '';
   let picture = r.profile?.imageUrl || r.profile?.picture || '';
@@ -79,17 +78,24 @@ const nativeSignIn = async (): Promise<GoogleUser> => {
       }
     } catch {}
   }
+  return { email, name: name || email, picture };
+};
 
+const nativeSignIn = async (): Promise<GoogleUser> => {
+  await ensureNativeInit();
+  const { SocialLogin } = await import('@capgo/capacitor-social-login');
+
+  const result = await SocialLogin.login({
+    provider: 'google',
+    options: NATIVE_LOGIN_OPTIONS,
+  });
+
+  const r = result.result as any;
+  const accessToken = getNativeAccessToken(result);
   if (!accessToken) throw new Error('No access token received from Google Sign-In');
 
-  const user: GoogleUser = {
-    email,
-    name: name || email,
-    picture,
-    accessToken,
-    expiresAt: Date.now() + NATIVE_SESSION_TTL,
-  };
-
+  const profile = await extractNativeProfile(r, accessToken);
+  const user = makeUser(profile, accessToken);
   await setSetting('googleUser', user);
   return user;
 };
@@ -118,7 +124,7 @@ const nativeRefresh = async (): Promise<GoogleUser> => {
     console.warn('Native refresh API failed, trying auto-select reauth:', err);
   }
 
-  // 2) Re-auth with auto-select settings (usually no visible prompt)
+  // 2) Re-auth with auto-select (usually no visible prompt)
   try {
     const result = await SocialLogin.login({
       provider: 'google',
@@ -134,7 +140,8 @@ const nativeRefresh = async (): Promise<GoogleUser> => {
       name: r.profile?.name || r.name || stored.name,
       picture: r.profile?.imageUrl || r.profile?.picture || stored.picture,
       accessToken,
-      expiresAt: Date.now() + NATIVE_SESSION_TTL,
+      accessTokenExpiresAt: Date.now() + ACCESS_TOKEN_TTL,
+      expiresAt: Date.now() + SESSION_TTL,
     };
 
     await setSetting('googleUser', refreshedUser);
@@ -149,6 +156,7 @@ const nativeRefresh = async (): Promise<GoogleUser> => {
 
 let tokenClient: any = null;
 let gisLoaded = false;
+let refreshInProgress: Promise<GoogleUser | null> | null = null;
 
 export const loadGoogleIdentityServices = (): Promise<void> => {
   if (isNative()) return Promise.resolve();
@@ -211,7 +219,7 @@ const webSignIn = (): Promise<GoogleUser> => {
         async (accessToken) => {
           try {
             const info = await fetchUserInfo(accessToken);
-            const user: GoogleUser = { ...info, accessToken, expiresAt: Date.now() + 365 * 24 * 3600 * 1000 };
+            const user = makeUser(info, accessToken);
             await setSetting('googleUser', user);
             resolve(user);
           } catch (err) { reject(err); }
@@ -237,7 +245,7 @@ const webRefresh = (): Promise<GoogleUser> => {
         async (accessToken) => {
           try {
             const info = await fetchUserInfo(accessToken);
-            const user: GoogleUser = { ...info, accessToken, expiresAt: Date.now() + 365 * 24 * 3600 * 1000 };
+            const user = makeUser(info, accessToken);
             await setSetting('googleUser', user);
             resolve(user);
           } catch (err) { reject(err); }
@@ -249,19 +257,29 @@ const webRefresh = (): Promise<GoogleUser> => {
   });
 };
 
-// Silent web refresh — tries prompt:'' and rejects quickly if it would show UI
+// Silent web refresh — tries prompt:'' with timeout, never shows UI
 const silentWebRefresh = (): Promise<GoogleUser | null> => {
-  return new Promise(async (resolve) => {
-    // Timeout: if no silent response in 3s, give up
-    const timeout = setTimeout(() => resolve(null), 3000);
+  // Deduplicate concurrent refresh calls
+  if (refreshInProgress) return refreshInProgress;
+
+  refreshInProgress = new Promise(async (resolve) => {
+    const timeout = setTimeout(() => resolve(null), 4000);
     try {
       await loadGoogleIdentityServices();
       initTokenClient(
         async (accessToken) => {
           clearTimeout(timeout);
           try {
-            const info = await fetchUserInfo(accessToken);
-            const user: GoogleUser = { ...info, accessToken, expiresAt: Date.now() + 365 * 24 * 3600 * 1000 };
+            const stored = await getStoredGoogleUser();
+            // Reuse stored profile to avoid extra API call
+            const user: GoogleUser = {
+              email: stored?.email || '',
+              name: stored?.name || '',
+              picture: stored?.picture || '',
+              accessToken,
+              accessTokenExpiresAt: Date.now() + ACCESS_TOKEN_TTL,
+              expiresAt: Date.now() + SESSION_TTL,
+            };
             await setSetting('googleUser', user);
             resolve(user);
           } catch { resolve(null); }
@@ -270,7 +288,9 @@ const silentWebRefresh = (): Promise<GoogleUser | null> => {
       );
       tokenClient.requestAccessToken({ prompt: '' });
     } catch { clearTimeout(timeout); resolve(null); }
-  });
+  }).finally(() => { refreshInProgress = null; });
+
+  return refreshInProgress;
 };
 
 // ── Unified API ───────────────────────────────────────────────────────────
@@ -288,32 +308,78 @@ export const signOutGoogle = async (): Promise<void> => {
   await removeSetting('googleUser');
 };
 
-export const getStoredGoogleUser = async (): Promise<GoogleUser | null> =>
-  getSetting<GoogleUser | null>('googleUser', null);
+export const getStoredGoogleUser = async (): Promise<GoogleUser | null> => {
+  const user = await getSetting<GoogleUser | null>('googleUser', null);
+  if (!user) return null;
+  // Migrate old users missing accessTokenExpiresAt
+  if (!user.accessTokenExpiresAt) {
+    user.accessTokenExpiresAt = 0; // treat as expired, will refresh
+  }
+  return user;
+};
 
+/** Check if the session is still valid (1 year) — user stays "logged in" */
+export const isSessionValid = (user: GoogleUser): boolean =>
+  user.expiresAt > Date.now();
+
+/** Check if the access token is still fresh (< 1hr) */
+export const isAccessTokenFresh = (user: GoogleUser): boolean =>
+  user.accessTokenExpiresAt > Date.now() + 60000;
+
+/** @deprecated Use isAccessTokenFresh instead */
 export const isTokenValid = (user: GoogleUser): boolean =>
-  user.expiresAt > Date.now() + 60000;
+  isAccessTokenFresh(user);
 
 export const refreshGoogleToken = (): Promise<GoogleUser> =>
   isNative() ? nativeRefresh() : webRefresh();
 
+/**
+ * Get a valid access token for API calls.
+ * - User stays logged in even if token refresh fails
+ * - On native: returns stored token (401 retry handles refresh)
+ * - On web: proactively refreshes if expired, falls back to stored token
+ */
 export const getValidAccessToken = async (): Promise<string | null> => {
   const user = await getStoredGoogleUser();
   if (!user) return null;
 
-  // Native (Capacitor): keep stable session and avoid frequent interactive prompts.
-  // Real validity is enforced by Google API; 401 handling triggers retry logic.
+  // Session expired (1 year) — user needs to re-login
+  if (!isSessionValid(user)) {
+    return null;
+  }
+
+  // Native: return stored token; 401 retry in driveApiFetch handles refresh
   if (isNative()) return user.accessToken;
 
-  // Web: use expiry + silent refresh
-  if (isTokenValid(user)) return user.accessToken;
+  // Web: if token is still fresh, use it
+  if (isAccessTokenFresh(user)) return user.accessToken;
 
+  // Try silent refresh (no UI prompt)
   try {
     const refreshed = await silentWebRefresh();
     if (refreshed) return refreshed.accessToken;
   } catch {
-    // fall through
+    // Silent refresh failed — return stale token, API 401 handler will retry
   }
 
+  // Return stale token — better than null; driveApiFetch 401 handler will refresh
   return user.accessToken;
+};
+
+/**
+ * Background token keep-alive for web.
+ * Call periodically (e.g., every 45 min) to keep the session fresh
+ * without user interaction.
+ */
+export const backgroundTokenRefresh = async (): Promise<void> => {
+  if (isNative()) return; // Native handles refresh natively
+  const user = await getStoredGoogleUser();
+  if (!user || !isSessionValid(user)) return;
+  if (isAccessTokenFresh(user)) return; // Still fresh, skip
+
+  try {
+    await silentWebRefresh();
+  } catch {
+    console.warn('Background token refresh failed — will retry later');
+  }
 };
