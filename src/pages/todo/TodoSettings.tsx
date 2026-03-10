@@ -380,6 +380,28 @@ const TodoSettings = () => {
                       </button>
                     ))}
                     <button
+                      className="w-full mt-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md border border-primary bg-primary/10 text-primary text-xs font-medium transition-colors hover:bg-primary/20"
+                      onClick={async () => {
+                        try {
+                          const { performFullCalendarSync } = await import('@/utils/systemCalendarSync');
+                          const { loadTasksFromDB } = await import('@/utils/taskStorage');
+                          const tasks = await loadTasksFromDB().catch(() => []);
+                          const events = await getSetting<any[]>('calendarEvents', []).catch(() => []);
+                          toast.loading('📅 Syncing...', { id: 'manual-sync' });
+                          const result = await performFullCalendarSync(tasks, events);
+                          const parts = [];
+                          if (result.pushed > 0) parts.push(`${result.pushed} pushed`);
+                          if (result.pulled > 0) parts.push(`${result.pulled} new`);
+                          if (result.updated > 0) parts.push(`${result.updated} updated`);
+                          toast.success(parts.length > 0 ? `📅 Synced: ${parts.join(', ')}` : '📅 Already in sync', { id: 'manual-sync' });
+                        } catch (e) {
+                          toast.error('Sync failed', { id: 'manual-sync' });
+                        }
+                      }}
+                    >
+                      🔄 {t('calendarSync.syncNow', 'Sync Now')}
+                    </button>
+                    <button
                       className="mt-1 text-xs text-destructive underline"
                       onClick={async () => {
                         try {
