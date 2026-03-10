@@ -74,6 +74,7 @@ const TodoSettings = () => {
   const [dailyDigestEnabled, setDailyDigestEnabled] = useState(false);
   const [overdueAlertsEnabled, setOverdueAlertsEnabled] = useState(true);
   const [calendarSyncEnabled, setCalendarSyncEnabled] = useState(false);
+  const [syncDirection, setSyncDirection] = useState<'bidirectional' | 'push' | 'pull'>('bidirectional');
   const currentLanguage = languages.find(l => l.code === i18n.language) || languages[0];
 
   // Load settings
@@ -83,6 +84,7 @@ const TodoSettings = () => {
     getSetting<boolean>('dailyDigestEnabled', false).then(setDailyDigestEnabled);
     getSetting<boolean>('overdueAlertsEnabled', true).then(setOverdueAlertsEnabled);
     getSetting<boolean>('systemCalendarSyncEnabled', false).then(setCalendarSyncEnabled);
+    getSetting<'bidirectional' | 'push' | 'pull'>('calendarSyncDirection', 'bidirectional').then(setSyncDirection);
     
   }, []);
 
@@ -353,11 +355,32 @@ const TodoSettings = () => {
                   <Switch checked={calendarSyncEnabled} onCheckedChange={handleCalendarSyncToggle} />
                 </div>
                 {calendarSyncEnabled && (
-                  <div className="px-4 py-3 text-xs text-muted-foreground bg-muted/30">
-                    <p>🔄 {t('settings.calendarSyncHint1', 'Tasks with due dates appear in your system calendar')}</p>
-                    <p className="mt-1">📲 {t('settings.calendarSyncHint2', 'Device calendar events sync into this app')}</p>
+                  <div className="px-4 py-3 text-xs text-muted-foreground bg-muted/30 space-y-2">
+                    <p className="font-medium text-foreground text-xs mb-1">{t('settings.syncDirection', 'Sync Direction')}</p>
+                    {([
+                      { value: 'bidirectional' as const, label: '🔄 ' + t('settings.syncBidirectional', 'Bidirectional'), desc: t('settings.syncBidirectionalDesc', 'App ↔ Calendar') },
+                      { value: 'push' as const, label: '📤 ' + t('settings.syncPushOnly', 'App → Calendar'), desc: t('settings.syncPushDesc', 'Only push app events to device calendar') },
+                      { value: 'pull' as const, label: '📥 ' + t('settings.syncPullOnly', 'Calendar → App'), desc: t('settings.syncPullDesc', 'Only import device calendar events') },
+                    ]).map(opt => (
+                      <button
+                        key={opt.value}
+                        className={`w-full text-left px-3 py-2 rounded-md border text-xs transition-colors ${
+                          syncDirection === opt.value
+                            ? 'border-primary bg-primary/10 text-foreground'
+                            : 'border-border text-muted-foreground'
+                        }`}
+                        onClick={async () => {
+                          setSyncDirection(opt.value);
+                          await setSetting('calendarSyncDirection', opt.value);
+                          toast.success(`Sync direction: ${opt.desc}`);
+                        }}
+                      >
+                        <span className="block">{opt.label}</span>
+                        <span className="block text-[10px] opacity-70">{opt.desc}</span>
+                      </button>
+                    ))}
                     <button
-                      className="mt-2 text-xs text-destructive underline"
+                      className="mt-1 text-xs text-destructive underline"
                       onClick={async () => {
                         try {
                           const { clearDuplicateCalendarEvents } = await import('@/utils/systemCalendarSync');
