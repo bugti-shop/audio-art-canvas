@@ -287,7 +287,11 @@ const DeferredSyncInit = () => {
   }, []);
 
   if (!ready) return null;
-  return <DeferredSyncHooks />;
+  return (
+    <Suspense fallback={null}>
+      <DeferredSyncHooks />
+    </Suspense>
+  );
 };
 
 const DeferredSyncHooks = lazy(() =>
