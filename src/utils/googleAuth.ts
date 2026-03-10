@@ -23,6 +23,9 @@ export interface GoogleUser {
   name: string;
   picture: string;
   accessToken: string;
+  /** Real access token expiry (~1hr from issue) */
+  accessTokenExpiresAt: number;
+  /** Session expiry — user stays "logged in" until this (1 year) */
   expiresAt: number;
 }
 
