@@ -86,8 +86,11 @@ export interface CalendarSyncStatus {
   errors: string[];
 }
 
+export type CalendarSyncDirection = 'bidirectional' | 'push' | 'pull';
+
 export const isCalendarSyncEnabled = () => getSetting<boolean>(SYNC_ENABLED_KEY, false);
 export const setCalendarSyncEnabled = (v: boolean) => setSetting(SYNC_ENABLED_KEY, v);
+export const getCalendarSyncDirection = () => getSetting<CalendarSyncDirection>('calendarSyncDirection', 'bidirectional');
 export const getCalendarSyncStatus = () => getSetting<CalendarSyncStatus>(SYNC_STATUS_KEY, {
   lastSyncedAt: null, pushed: 0, pulled: 0, totalSynced: 0, errors: [],
 });
