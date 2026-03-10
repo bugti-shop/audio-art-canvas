@@ -356,6 +356,24 @@ const TodoSettings = () => {
                   <div className="px-4 py-3 text-xs text-muted-foreground bg-muted/30">
                     <p>🔄 {t('settings.calendarSyncHint1', 'Tasks with due dates appear in your system calendar')}</p>
                     <p className="mt-1">📲 {t('settings.calendarSyncHint2', 'Device calendar events sync into this app')}</p>
+                    <button
+                      className="mt-2 text-xs text-destructive underline"
+                      onClick={async () => {
+                        try {
+                          const { clearDuplicateCalendarEvents } = await import('@/utils/systemCalendarSync');
+                          const removed = await clearDuplicateCalendarEvents();
+                          if (removed > 0) {
+                            toast.success(`🧹 Removed ${removed} duplicate event${removed > 1 ? 's' : ''}`);
+                          } else {
+                            toast.success('✅ No duplicate events found');
+                          }
+                        } catch (e) {
+                          toast.error('Failed to clear duplicates');
+                        }
+                      }}
+                    >
+                      🧹 {t('settings.clearDuplicateEvents', 'Clear Duplicate Events')}
+                    </button>
                   </div>
                 )}
               </div>
