@@ -2,13 +2,20 @@
  * Bidirectional sync between app tasks/events and the device's native calendar.
  * Uses @ebarooni/capacitor-calendar (v8) for Capacitor 8.
  *
+ * ── Deduplication strategy ──
+ *   • A "syncMap" persists appId → nativeEventId for outbound (app→native) events.
+ *   • A "pulledIdsSet" persists native event IDs that were imported into the app,
+ *     so they are never pushed back to the native calendar.
+ *   • Pulled events use a stable ID: `native_${nativeId}` — the same native event
+ *     always maps to the same app ID, preventing duplicates on repeated pulls.
+ *
  * ── Outbound (App → System Calendar) ──
- *   • Every task with a dueDate or event is pushed to the native calendar.
- *   • The native event ID is stored in the task/event's `googleCalendarEventId` field.
+ *   • Every task with a dueDate or app-created event is pushed to the native calendar.
+ *   • Events originally pulled FROM native (id starts with "native_") are skipped.
  *
  * ── Inbound (System Calendar → App) ──
- *   • Events fetched from the native calendar that don't already exist in the app
- *     are surfaced as CalendarEvent objects.
+ *   • Events fetched from the native calendar that weren't pushed by us
+ *     and aren't already in the app are added once.
  */
 
 import { Capacitor } from '@capacitor/core';
@@ -20,6 +27,7 @@ import { getSetting, setSetting } from './settingsStorage';
 export interface SystemCalendarSyncResult {
   pushed: number;
   pulled: number;
+  updated: number;
   errors: string[];
 }
 
@@ -66,11 +74,12 @@ export const checkCalendarPermissions = async (): Promise<boolean> => {
 
 // ─── Sync enable/disable setting ─────────────────────────────────
 const SYNC_ENABLED_KEY = 'systemCalendarSyncEnabled';
-const SYNC_MAP_KEY = 'systemCalendarSyncMap'; // maps app id → native event id
+const SYNC_MAP_KEY = 'systemCalendarSyncMap'; // appId → nativeEventId (outbound)
+const PULLED_IDS_KEY = 'systemCalendarPulledIds'; // Set of native IDs we imported
 const SYNC_STATUS_KEY = 'systemCalendarSyncStatus';
 
 export interface CalendarSyncStatus {
-  lastSyncedAt: string | null; // ISO date
+  lastSyncedAt: string | null;
   pushed: number;
   pulled: number;
   totalSynced: number;
@@ -88,11 +97,22 @@ const saveSyncStatus = (s: CalendarSyncStatus) => {
   window.dispatchEvent(new CustomEvent('calendarSyncStatusUpdated'));
 };
 
+// ─── Sync maps ──────────────────────────────────────────────────
 type SyncMap = Record<string, string>; // appId → nativeEventId
 const loadSyncMap = () => getSetting<SyncMap>(SYNC_MAP_KEY, {});
 const saveSyncMap = (m: SyncMap) => setSetting(SYNC_MAP_KEY, m);
 
-// ─── Reminder offset helper ─────────────────────────────────────
+// Pulled IDs: native event IDs that we imported into the app
+const loadPulledIds = async (): Promise<Set<string>> => {
+  const arr = await getSetting<string[]>(PULLED_IDS_KEY, []);
+  return new Set(arr);
+};
+const savePulledIds = (s: Set<string>) => setSetting(PULLED_IDS_KEY, [...s]);
+
+// ─── Helpers ────────────────────────────────────────────────────
+/** Returns true if an app event/task ID represents a pulled native event */
+const isPulledNativeId = (id: string) => id.startsWith('native_');
+
 const reminderToMinutes = (reminder?: string): number[] => {
   switch (reminder) {
     case '5min': return [-5];
@@ -101,20 +121,23 @@ const reminderToMinutes = (reminder?: string): number[] => {
     case '30min': return [-30];
     case '1hour': return [-60];
     case '1day': return [-1440];
-    default: return [-15]; // default 15 min before
+    default: return [-15];
   }
 };
 
 // ─── Push a single task to native calendar ───────────────────────
 export const pushTaskToNativeCalendar = async (task: TodoItem): Promise<string | null> => {
   if (!isNative() || !task.dueDate) return null;
+  // Never push pulled native events back
+  if (isPulledNativeId(task.id)) return null;
+
   try {
     const cal = CapacitorCalendar;
     const syncMap = await loadSyncMap();
     const existingId = syncMap[task.id];
 
     const startDate = new Date(task.dueDate).getTime();
-    const endDate = startDate + 60 * 60 * 1000; // 1 hour default duration
+    const endDate = startDate + 60 * 60 * 1000;
 
     const eventData = {
       title: task.text,
@@ -127,19 +150,17 @@ export const pushTaskToNativeCalendar = async (task: TodoItem): Promise<string |
     };
 
     if (existingId) {
-      // Update existing event
       try {
         await Promise.resolve(cal.modifyEvent({ id: existingId, ...eventData }));
+        return existingId;
       } catch {
-        // If modify fails (event deleted externally), create new
+        // Event was deleted externally → create new
         const { id } = await Promise.resolve(cal.createEvent(eventData));
         syncMap[task.id] = id;
         await saveSyncMap(syncMap);
         return id;
       }
-      return existingId;
     } else {
-      // Create new event
       const { id } = await Promise.resolve(cal.createEvent(eventData));
       syncMap[task.id] = id;
       await saveSyncMap(syncMap);
@@ -154,6 +175,9 @@ export const pushTaskToNativeCalendar = async (task: TodoItem): Promise<string |
 // ─── Push an app CalendarEvent to native calendar ────────────────
 export const pushEventToNativeCalendar = async (event: AppCalendarEvent): Promise<string | null> => {
   if (!isNative()) return null;
+  // Never push pulled native events back — this prevents the duplication loop
+  if (isPulledNativeId(event.id)) return null;
+
   try {
     const cal = CapacitorCalendar;
     const syncMap = await loadSyncMap();
@@ -172,13 +196,13 @@ export const pushEventToNativeCalendar = async (event: AppCalendarEvent): Promis
     if (existingId) {
       try {
         await Promise.resolve(cal.modifyEvent({ id: existingId, ...eventData }));
+        return existingId;
       } catch {
         const { id } = await Promise.resolve(cal.createEvent(eventData));
         syncMap[event.id] = id;
         await saveSyncMap(syncMap);
         return id;
       }
-      return existingId;
     } else {
       const { id } = await Promise.resolve(cal.createEvent(eventData));
       syncMap[event.id] = id;
@@ -212,8 +236,8 @@ export const removeFromNativeCalendar = async (appId: string): Promise<void> => 
 export const pullFromNativeCalendar = async (
   daysAhead = 30,
   daysBehind = 7,
-): Promise<AppCalendarEvent[]> => {
-  if (!isNative()) return [];
+): Promise<{ newEvents: AppCalendarEvent[]; updatedEvents: AppCalendarEvent[] }> => {
+  if (!isNative()) return { newEvents: [], updatedEvents: [] };
   try {
     const cal = CapacitorCalendar;
     const now = Date.now();
@@ -225,60 +249,98 @@ export const pullFromNativeCalendar = async (
       const response = await Promise.resolve(cal.listEventsInRange({ from, to }));
       nativeEvents = response?.result ?? [];
     } catch (listErr) {
-      // listEventsInRange may not be implemented on some Android versions
       const msg = String(listErr);
       if (msg.includes('not implemented') || msg.includes('UNIMPLEMENTED')) {
         console.warn('listEventsInRange not supported on this device');
-        return [];
+        return { newEvents: [], updatedEvents: [] };
       }
       throw listErr;
     }
 
-    if (!Array.isArray(nativeEvents) || nativeEvents.length === 0) return [];
+    if (!Array.isArray(nativeEvents) || nativeEvents.length === 0) {
+      return { newEvents: [], updatedEvents: [] };
+    }
 
+    // Load both maps
     const syncMap = await loadSyncMap();
-    const nativeIdSet = new Set(Object.values(syncMap));
+    const pulledIds = await loadPulledIds();
+    const pushedNativeIds = new Set(Object.values(syncMap));
 
-    // Filter out events that we pushed ourselves
-    const externalEvents = nativeEvents.filter(e => e?.id && !nativeIdSet.has(e.id));
+    // Load existing app events for update detection
+    const existingAppEvents = await getSetting<AppCalendarEvent[]>('calendarEvents', []);
+    const existingByNativeKey = new Map<string, AppCalendarEvent>();
+    for (const e of existingAppEvents) {
+      if (isPulledNativeId(e.id)) {
+        existingByNativeKey.set(e.id, e);
+      }
+    }
 
-    return externalEvents
-      .map(e => {
-        try {
-          const startTs = typeof e.startDate === 'number' ? e.startDate : Date.now();
-          const endTs = typeof e.endDate === 'number' ? e.endDate : startTs + 3600000;
-          const startDate = new Date(startTs);
-          const endDate = new Date(endTs);
+    const newEvents: AppCalendarEvent[] = [];
+    const updatedEvents: AppCalendarEvent[] = [];
 
-          // Skip events with invalid dates
-          if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) return null;
+    for (const e of nativeEvents) {
+      if (!e?.id) continue;
+      const nativeId = String(e.id);
 
-          return {
-            id: `native_${e.id}`,
-            title: e.title || 'Untitled',
-            description: e.description || undefined,
-            location: e.location || undefined,
-            allDay: e.isAllDay ?? false,
-            startDate,
-            endDate,
-            timezone: e.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone,
-            repeat: 'never' as const,
-            reminder: 'at_time' as const,
-            createdAt: e.creationDate ? new Date(e.creationDate) : new Date(),
-            updatedAt: e.lastModifiedDate ? new Date(e.lastModifiedDate) : new Date(),
-          };
-        } catch {
-          return null;
+      // Skip events WE pushed to native calendar
+      if (pushedNativeIds.has(nativeId)) continue;
+
+      const startTs = typeof e.startDate === 'number' ? e.startDate : Date.now();
+      const endTs = typeof e.endDate === 'number' ? e.endDate : startTs + 3600000;
+      const startDate = new Date(startTs);
+      const endDate = new Date(endTs);
+
+      if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) continue;
+
+      const appId = `native_${nativeId}`;
+      const mapped: AppCalendarEvent = {
+        id: appId,
+        title: e.title || 'Untitled',
+        description: e.description || undefined,
+        location: e.location || undefined,
+        allDay: e.isAllDay ?? false,
+        startDate,
+        endDate,
+        timezone: e.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone,
+        repeat: 'never' as const,
+        reminder: 'at_time' as const,
+        createdAt: e.creationDate ? new Date(e.creationDate) : new Date(),
+        updatedAt: e.lastModifiedDate ? new Date(e.lastModifiedDate) : new Date(),
+      };
+
+      const existing = existingByNativeKey.get(appId);
+      if (existing) {
+        // Check if the native event was modified since we last pulled it
+        const existingModified = existing.updatedAt instanceof Date
+          ? existing.updatedAt.getTime()
+          : new Date(existing.updatedAt).getTime();
+        const nativeModified = mapped.updatedAt instanceof Date
+          ? mapped.updatedAt.getTime()
+          : new Date(mapped.updatedAt).getTime();
+
+        if (nativeModified > existingModified) {
+          updatedEvents.push(mapped);
         }
-      })
-      .filter((e): e is NonNullable<typeof e> => e !== null) as AppCalendarEvent[];
+        // Already exists and not modified → skip (no duplicate)
+      } else if (!pulledIds.has(nativeId)) {
+        // Truly new event we haven't seen before
+        newEvents.push(mapped);
+        pulledIds.add(nativeId);
+      }
+      // else: we pulled it before but it was deleted from app → don't re-import
+    }
+
+    // Persist the pulled IDs set
+    await savePulledIds(pulledIds);
+
+    return { newEvents, updatedEvents };
   } catch (e) {
     console.error('Failed to pull from native calendar:', e);
-    return [];
+    return { newEvents: [], updatedEvents: [] };
   }
 };
 
-// ─── Yield to UI thread to prevent freezing ─────────────────────
+// ─── Yield to UI thread ─────────────────────────────────────────
 const yieldToUI = () => new Promise(resolve => setTimeout(resolve, 0));
 
 // ─── Batch processing helper ────────────────────────────────────
@@ -311,7 +373,6 @@ const processBatch = async <T>(
     }
 
     onProgress?.(processed, total);
-    // Yield to UI thread between batches to keep app responsive
     await yieldToUI();
   }
 
@@ -324,7 +385,7 @@ export const performFullCalendarSync = async (
   appEvents: AppCalendarEvent[],
   onProgress?: SyncProgressCallback,
 ): Promise<SystemCalendarSyncResult> => {
-  const result: SystemCalendarSyncResult = { pushed: 0, pulled: 0, errors: [] };
+  const result: SystemCalendarSyncResult = { pushed: 0, pulled: 0, updated: 0, errors: [] };
 
   if (!isNative()) return result;
 
@@ -338,8 +399,10 @@ export const performFullCalendarSync = async (
       return result;
     }
 
-    // ── Push tasks with due dates (batched) ──
-    const tasksWithDates = (tasks || []).filter(t => t?.dueDate && !t?.completed);
+    // ── Push tasks with due dates (skip pulled native events) ──
+    const tasksWithDates = (tasks || []).filter(
+      t => t?.dueDate && !t?.completed && !isPulledNativeId(t.id)
+    );
     onProgress?.({ phase: 'Pushing tasks', current: 0, total: tasksWithDates.length });
     const taskResult = await processBatch(tasksWithDates, async (task) => {
       await pushTaskToNativeCalendar(task);
@@ -350,10 +413,10 @@ export const performFullCalendarSync = async (
     result.pushed = taskResult.processed;
     result.errors.push(...taskResult.errors.map(e => `Task push: ${e}`));
 
-    // ── Push app calendar events (batched) ──
-    const eventsArr = appEvents || [];
-    onProgress?.({ phase: 'Pushing events', current: 0, total: eventsArr.length });
-    const eventResult = await processBatch(eventsArr, async (event) => {
+    // ── Push app calendar events (skip pulled native events) ──
+    const appCreatedEvents = (appEvents || []).filter(e => !isPulledNativeId(e.id));
+    onProgress?.({ phase: 'Pushing events', current: 0, total: appCreatedEvents.length });
+    const eventResult = await processBatch(appCreatedEvents, async (event) => {
       await pushEventToNativeCalendar(event);
     }, (cur, tot) => {
       onProgress?.({ phase: 'Pushing events', current: result.pushed + cur, total: result.pushed + tot });
@@ -361,20 +424,36 @@ export const performFullCalendarSync = async (
     result.pushed += eventResult.processed;
     result.errors.push(...eventResult.errors.map(e => `Event push: ${e}`));
 
-    // ── Pull from native calendar ──
+    // ── Pull from native calendar (deduplicated) ──
     onProgress?.({ phase: 'Pulling events', current: 0, total: 0 });
     try {
-      const pulledEvents = await pullFromNativeCalendar();
+      const { newEvents, updatedEvents } = await pullFromNativeCalendar();
       const existingAppEvents = await getSetting<AppCalendarEvent[]>('calendarEvents', []);
-      const existingIds = new Set(existingAppEvents.map(e => e.id));
 
-      const newEvents = pulledEvents.filter(e => !existingIds.has(e.id));
+      let changed = false;
+      let merged = [...existingAppEvents];
+
+      // Add genuinely new events
       if (newEvents.length > 0) {
-        const merged = [...existingAppEvents, ...newEvents];
-        await setSetting('calendarEvents', merged);
+        merged = [...merged, ...newEvents];
         result.pulled = newEvents.length;
-        window.dispatchEvent(new CustomEvent('calendarEventsUpdated'));
+        changed = true;
       }
+
+      // Update modified events in place
+      if (updatedEvents.length > 0) {
+        const updateMap = new Map(updatedEvents.map(e => [e.id, e]));
+        merged = merged.map(e => updateMap.get(e.id) || e);
+        result.updated = updatedEvents.length;
+        changed = true;
+      }
+
+      if (changed) {
+        await setSetting('calendarEvents', merged);
+        // Use a flag to prevent sync loop — the handler checks this
+        window.dispatchEvent(new CustomEvent('calendarEventsUpdated', { detail: { fromSync: true } }));
+      }
+
       onProgress?.({ phase: 'Pulling events', current: result.pulled, total: result.pulled });
     } catch (pullErr) {
       const msg = String(pullErr);

@@ -11,11 +11,15 @@ const SYNC_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 /**
  * Automatically syncs app tasks/events with the device's native calendar.
  * Runs on app focus and periodically.
+ * 
+ * Prevents sync loops by ignoring calendarEventsUpdated events
+ * that originate from the sync process itself.
  */
 export const useSystemCalendarSync = () => {
   const lastSyncRef = useRef<number>(0);
   const intervalRef = useRef<ReturnType<typeof setInterval>>();
   const toastIdRef = useRef<string | number | undefined>();
+  const isSyncingRef = useRef(false);
 
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
@@ -27,6 +31,9 @@ export const useSystemCalendarSync = () => {
     });
 
     const doSync = async () => {
+      // Prevent concurrent syncs (which cause duplicate pushes)
+      if (isSyncingRef.current) return;
+
       try {
         const enabled = await isCalendarSyncEnabled();
         if (!enabled) return;
@@ -34,11 +41,11 @@ export const useSystemCalendarSync = () => {
         const now = Date.now();
         if (now - lastSyncRef.current < 60_000) return; // 1 min cooldown
         lastSyncRef.current = now;
+        isSyncingRef.current = true;
 
         const tasks = await loadTasksFromDB();
         const events = await getSetting<CalendarEvent[]>('calendarEvents', []);
 
-        // Show initial sync toast
         toastIdRef.current = toast.loading('📅 Syncing calendar...', { duration: Infinity });
 
         const result = await performFullCalendarSync(tasks, events, ({ phase, current, total }) => {
@@ -47,9 +54,12 @@ export const useSystemCalendarSync = () => {
           }
         });
 
-        // Show completion toast
-        if (result.pushed > 0 || result.pulled > 0) {
-          toast.success(`📅 Sync complete: ${result.pushed} pushed, ${result.pulled} pulled`, {
+        if (result.pushed > 0 || result.pulled > 0 || result.updated > 0) {
+          const parts = [];
+          if (result.pushed > 0) parts.push(`${result.pushed} pushed`);
+          if (result.pulled > 0) parts.push(`${result.pulled} new`);
+          if (result.updated > 0) parts.push(`${result.updated} updated`);
+          toast.success(`📅 Sync complete: ${parts.join(', ')}`, {
             id: toastIdRef.current,
             duration: 3000,
           });
@@ -66,22 +76,30 @@ export const useSystemCalendarSync = () => {
         if (!msg.includes('not implemented') && !msg.includes('UNIMPLEMENTED')) {
           console.warn('Calendar sync failed:', e);
         }
+      } finally {
+        isSyncingRef.current = false;
       }
     };
 
-    // Sync on visibility change (app foreground)
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') doSync();
     };
 
-    // Sync when tasks or events change
-    const handleDataChange = () => {
-      setTimeout(doSync, 3000); // 3s debounce
+    // Only sync on task changes, NOT on calendarEventsUpdated from sync itself
+    const handleTaskChange = () => {
+      setTimeout(doSync, 3000);
+    };
+
+    const handleCalendarChange = (e: Event) => {
+      // Ignore events dispatched by the sync process to break the loop
+      const detail = (e as CustomEvent)?.detail;
+      if (detail?.fromSync) return;
+      setTimeout(doSync, 3000);
     };
 
     document.addEventListener('visibilitychange', handleVisibility);
-    window.addEventListener('tasksUpdated', handleDataChange);
-    window.addEventListener('calendarEventsUpdated', handleDataChange);
+    window.addEventListener('tasksUpdated', handleTaskChange);
+    window.addEventListener('calendarEventsUpdated', handleCalendarChange);
 
     // Initial sync
     doSync();
@@ -91,8 +109,8 @@ export const useSystemCalendarSync = () => {
 
     return () => {
       document.removeEventListener('visibilitychange', handleVisibility);
-      window.removeEventListener('tasksUpdated', handleDataChange);
-      window.removeEventListener('calendarEventsUpdated', handleDataChange);
+      window.removeEventListener('tasksUpdated', handleTaskChange);
+      window.removeEventListener('calendarEventsUpdated', handleCalendarChange);
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
   }, []);
