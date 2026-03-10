@@ -73,7 +73,7 @@ import ee.forgr.capacitor.social.login.GoogleProvider;
 import ee.forgr.capacitor.social.login.SocialLoginPlugin;
 import ee.forgr.capacitor.social.login.ModifiedMainActivityForSocialLoginPlugin;
 
-import nota.npd.com.DynamicIconPlugin;
+ 
 
 /**
  * Main Activity for Npd App
@@ -85,13 +85,6 @@ import nota.npd.com.DynamicIconPlugin;
 public class MainActivity extends BridgeActivity implements ModifiedMainActivityForSocialLoginPlugin {
     
     private static final String TAG = "MainActivity";
-
-    @Override
-    public void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        // Register custom native plugins
-        registerPlugin(DynamicIconPlugin.class);
-    }
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
