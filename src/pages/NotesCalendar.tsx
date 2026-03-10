@@ -150,6 +150,10 @@ const NotesCalendar = () => {
   return (
     <div className="min-h-screen min-h-screen-dynamic bg-background pb-16 sm:pb-20 flex flex-col">
       <div style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }} className="flex-1 flex flex-col overflow-hidden">
+        {/* Calendar Sync Button */}
+        <div className="px-4 pt-2">
+          <CalendarSyncBadge alwaysVisible />
+        </div>
         {/* Calendar View with Background */}
         <NotesCalendarView
           selectedDate={date}
