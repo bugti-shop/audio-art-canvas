@@ -262,7 +262,7 @@ const silentWebRefresh = (): Promise<GoogleUser | null> => {
   // Deduplicate concurrent refresh calls
   if (refreshInProgress) return refreshInProgress;
 
-  refreshInProgress = new Promise(async (resolve) => {
+  refreshInProgress = new Promise<GoogleUser | null>(async (resolve) => {
     const timeout = setTimeout(() => resolve(null), 4000);
     try {
       await loadGoogleIdentityServices();
