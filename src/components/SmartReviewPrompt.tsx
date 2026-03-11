@@ -95,7 +95,7 @@ export const SmartReviewPrompt = () => {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.15 + i * 0.08 }}
                 >
-                  <Star className="h-7 w-7 fill-yellow-400 text-yellow-400" />
+                  <Star className="h-7 w-7 fill-primary text-primary" />
                 </motion.div>
               ))}
             </motion.div>
@@ -105,7 +105,7 @@ export const SmartReviewPrompt = () => {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.4 }}
             >
-              <Heart className="h-5 w-5 text-red-500 fill-red-500 mx-auto mb-2" />
+              <Heart className="h-5 w-5 text-destructive fill-destructive mx-auto mb-2" />
               <h3 className="text-lg font-bold text-foreground mb-1">
                 Loving Npd?
               </h3>
