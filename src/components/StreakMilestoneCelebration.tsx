@@ -95,8 +95,13 @@ export const StreakMilestoneCelebration = () => {
   }, []);
 
   const handleClose = useCallback(() => {
+    const closedMilestone = milestone;
     setMilestone(null);
-  }, []);
+    // Trigger smart review prompt check after celebration closes
+    if (closedMilestone) {
+      window.dispatchEvent(new CustomEvent('reviewPromptCheck', { detail: { milestone: closedMilestone } }));
+    }
+  }, [milestone]);
 
   const handleShare = useCallback(async () => {
     if (!shareCardRef.current) return;
