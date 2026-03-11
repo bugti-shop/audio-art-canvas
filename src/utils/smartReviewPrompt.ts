@@ -97,7 +97,7 @@ export const recordDismissed = async () => {
  * Open the Play Store listing for the app.
  */
 export const openPlayStoreReview = async () => {
-  const appId = 'com.npdapp.nota'; // replace with your actual package ID
+  const appId = 'nota.npd.com';
   
   if (Capacitor.isNativePlatform()) {
     try {
