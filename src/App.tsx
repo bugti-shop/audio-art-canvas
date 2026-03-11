@@ -259,6 +259,7 @@ const AppContent = () => {
       <WhatsNewSheet />
       <StreakMilestoneCelebration />
       <StreakTierCelebration />
+      <SmartReviewPrompt />
       
       <ComboOverlay />
       <WelcomeBackCelebration
