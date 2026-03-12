@@ -40,10 +40,10 @@ interface SettingsSheetsProps {
   toolbarOrder: {
     isManagerOpen: boolean;
     setIsManagerOpen: (v: boolean) => void;
-    updateOrder: (order: string[]) => void;
-    updateVisibility: (visibility: Record<string, boolean>) => void;
-    order: string[];
-    visibility: Record<string, boolean>;
+    updateOrder: (order: ToolbarItemId[]) => void;
+    updateVisibility: (visibility: Record<ToolbarItemId, boolean>) => void;
+    order: ToolbarItemId[];
+    visibility: Record<ToolbarItemId, boolean>;
   };
   // Backup success
   showBackupSuccessDialog: boolean;
