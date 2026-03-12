@@ -1582,7 +1582,7 @@ const Today = () => {
         onBulkSetReminder={(date) => { setItems(items.map(i => selectedTaskIds.has(i.id) ? { ...i, reminderTime: date } : i)); setSelectedTaskIds(new Set()); setIsSelectionMode(false); toast.success(t('todayPage.bulkReminderSet', { count: selectedTaskIds.size })); }}
         isBulkRepeatSheetOpen={isBulkRepeatSheetOpen}
         onCloseBulkRepeat={() => setIsBulkRepeatSheetOpen(false)}
-        onBulkSetRepeat={(repeatType) => { setItems(items.map(i => selectedTaskIds.has(i.id) ? { ...i, repeatType } : i)); setSelectedTaskIds(new Set()); setIsSelectionMode(false); toast.success(t('todayPage.bulkRepeatSet', { count: selectedTaskIds.size })); }}
+        onBulkSetRepeat={(repeatType) => { setItems(items.map(i => selectedTaskIds.has(i.id) ? { ...i, repeatType: repeatType as TodoItem['repeatType'] } : i)); setSelectedTaskIds(new Set()); setIsSelectionMode(false); toast.success(t('todayPage.bulkRepeatSet', { count: selectedTaskIds.size })); }}
         isBulkSectionMoveOpen={isBulkSectionMoveOpen}
         onCloseBulkSectionMove={() => setIsBulkSectionMoveOpen(false)}
         onBulkMoveToSection={(sectionId) => { setItems(items.map(i => selectedTaskIds.has(i.id) ? { ...i, sectionId } : i)); setSelectedTaskIds(new Set()); setIsSelectionMode(false); toast.success(t('todayPage.bulkSectionMoved', { count: selectedTaskIds.size })); }}
