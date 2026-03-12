@@ -1591,7 +1591,7 @@ const Today = () => {
         onBulkStatusChange={(status) => {
           const isCompleting = status === 'completed';
           const now = new Date();
-          setItems(items.map(i => selectedTaskIds.has(i.id) ? { ...i, status, completed: isCompleting ? true : i.completed, completedAt: isCompleting ? now : i.completedAt, modifiedAt: now } : i));
+          setItems(items.map(i => selectedTaskIds.has(i.id) ? { ...i, status: status as TodoItem['status'], completed: isCompleting ? true : i.completed, completedAt: isCompleting ? now : i.completedAt, modifiedAt: now } : i));
           setSelectedTaskIds(new Set()); setIsSelectionMode(false);
           if (isCompleting) playCompletionSound();
           toast.success(t('todayPage.bulkStatusSet', { count: selectedTaskIds.size }));
