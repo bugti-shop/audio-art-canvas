@@ -9,7 +9,7 @@ import { CustomizeNavigationSheet } from '@/components/CustomizeNavigationSheet'
 import { WidgetSettingsSheet } from '@/components/WidgetSettingsSheet';
 import { AppLockSettingsSheet } from '@/components/AppLockSettingsSheet';
 import { AppLockSetup } from '@/components/AppLockSetup';
-import { ToolbarOrderManager } from '@/components/ToolbarOrderManager';
+import { ToolbarOrderManager, ToolbarItemId } from '@/components/ToolbarOrderManager';
 import { BackupSuccessDialog } from '@/components/BackupSuccessDialog';
 import { ImportDataSheet } from '@/components/ImportDataSheet';
 import { CustomThemeSheet } from '@/components/CustomThemeSheet';
