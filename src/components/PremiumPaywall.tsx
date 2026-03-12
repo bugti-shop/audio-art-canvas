@@ -67,18 +67,19 @@ export const PremiumPaywall = () => {
         const hasEntitlement = customerInfo.entitlements.active['npd Pro'] !== undefined;
         if (hasEntitlement) {
           await unlockPro();
+          closePaywall();
         } else {
-          setAdminError('No purchases found');
-          setTimeout(() => setAdminError(''), 3000);
+          setAdminError('No active purchases found. If you believe this is an error, please contact support.');
+          setTimeout(() => setAdminError(''), 4000);
         }
       } else {
-        setAdminError('No purchases found');
+        setAdminError('Restore is only available on mobile devices');
         setTimeout(() => setAdminError(''), 3000);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Restore failed:', error);
-      setAdminError('Restore failed');
-      setTimeout(() => setAdminError(''), 3000);
+      setAdminError(error?.message || 'Restore failed. Please try again.');
+      setTimeout(() => setAdminError(''), 4000);
     } finally {
       setIsRestoring(false);
     }
